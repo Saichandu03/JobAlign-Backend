@@ -1,0 +1,796 @@
+const axios = require("axios");
+const cron = require("node-cron");
+const LRU = require("lru-cache");
+const userSchema = require("../models/userSchema");
+const resumeSchema = require("../models/resumeSchema");
+require("dotenv").config();
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { sendBufferToAffinda } = require("./resumeController");
+
+const Together = require("together-ai");
+
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+const together = new Together({
+  apiKey: process.env.TOGETHER_API_KEY,
+});
+
+const APP_ID = process.env.ADZUNA_APP_ID;
+const APP_KEY = process.env.ADZUNA_APP_KEY;
+const BASE_URL = process.env.ADZUNA_BASE_URL;
+
+const cache = new LRU({
+  max: 10000,
+  ttl: 1000 * 60 * 60 * 24, // 24 hours
+});
+
+// Request queue for controlled concurrency
+class RequestQueue {
+  constructor(maxConcurrent = 8) {
+    this.maxConcurrent = maxConcurrent;
+    this.running = 0;
+    this.queue = [];
+  }
+
+  async add(fn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ fn, resolve, reject });
+      this.process();
+    });
+  }
+
+  async process() {
+    if (this.running >= this.maxConcurrent || this.queue.length === 0) {
+      return;
+    }
+
+    this.running++;
+    const { fn, resolve, reject } = this.queue.shift();
+
+    try {
+      const result = await fn();
+      resolve(result);
+    } catch (error) {
+      reject(error);
+    } finally {
+      this.running--;
+      this.process();
+    }
+  }
+}
+
+const requestQueue = new RequestQueue();
+
+// Utility functions
+const normalizeString = (str = "") => {
+  return String(str)
+    .toLowerCase()
+    .replace(/[\s\-_]/g, "");
+};
+
+const matchesFilter = (filterArray, value) => {
+  if (!filterArray || filterArray.length === 0) return true;
+  if (!value || value === "Unspecified") return true;
+  return filterArray.some((filterVal) =>
+    normalizeString(value).includes(normalizeString(filterVal))
+  );
+};
+
+const matchesCompany = (filterCompanies, jobCompany) => {
+  if (!filterCompanies || filterCompanies.length === 0) return true;
+  if (!jobCompany) return false;
+
+  const jobNorm = normalizeString(jobCompany);
+  return filterCompanies.some(
+    (comp) =>
+      jobNorm.includes(normalizeString(comp)) ||
+      normalizeString(comp).includes(jobNorm)
+  );
+};
+
+const inferWorkplaceModel = (title = "", description = "", location = "") => {
+  const text = `${title} ${description} ${location}`.toLowerCase();
+
+  if (
+    /(remote\sonly|fully\sremote|work\sfrom\shome|wfh|remote\sjob)/.test(text)
+  ) {
+    return "Remote";
+  }
+  if (/(hybrid|wfo\s+hybrid)/.test(text)) {
+    return "Hybrid";
+  }
+  if (/(on[\s-]?site|office[\s-]?based|in[\s-]?office|wfo)/.test(text)) {
+    return "On-site";
+  }
+
+  return "On-site";
+};
+
+const inferExperienceLevel = (text = "", title = "") => {
+  const fullText = `${title} ${text}`.toLowerCase();
+
+  // Explicit "entry level" mentions
+  if (/(entry\slevel|junior|0-?1\s*years|fresher)/.test(fullText)) {
+    return "Entry Level";
+  }
+
+  // Years experience detection
+  const yearsExpMatch = fullText.match(/(\d+)\+?\s*years?\s*(experience|exp)/);
+  if (yearsExpMatch) {
+    const years = parseInt(yearsExpMatch[1]);
+    if (years <= 1) return "Entry Level";
+    if (years <= 3) return "Mid Level";
+    return "Senior Level";
+  }
+
+  // Title-based detection
+  const titleLevels = {
+    junior: "Entry Level",
+    senior: "Senior Level",
+    lead: "Senior Level",
+    principal: "Director",
+    manager: "Director",
+    director: "Director",
+    vp: "Director",
+    architect: "Senior Level",
+  };
+
+  for (const [keyword, level] of Object.entries(titleLevels)) {
+    if (title.toLowerCase().includes(keyword)) return level;
+  }
+
+  return "Unspecified";
+};
+
+function classifyJobExperience(job) {
+  const title = (job.title || "").toLowerCase();
+  const description = (job.description || "").toLowerCase();
+  const company = job.company?.display_name?.toLowerCase() || "";
+
+  const allText = `${title} ${description}`;
+
+  const seniorTitleKeywords = [
+    "lead",
+    "senior",
+    "sr.",
+    "sr ",
+    "principal",
+    "architect",
+    "manager",
+    "head of",
+    "director",
+    "vp",
+    "vice president",
+    "chief",
+    "staff",
+    "expert",
+    "specialist",
+  ];
+
+  if (seniorTitleKeywords.some((keyword) => title.includes(keyword))) {
+    return "experienced";
+  }
+
+  const fresherKeywords = [
+    "fresher",
+    "graduate",
+    "trainee",
+    "intern",
+    "entry level",
+    "entry-level",
+    "junior",
+    "jr.",
+    "jr ",
+    "associate",
+    "beginner",
+  ];
+
+  if (fresherKeywords.some((keyword) => allText.includes(keyword))) {
+    return "fresher";
+  }
+
+  const yearPatterns = [
+    /(\d+)[\s-]*(?:to|-)[\s-]*(\d+)[\s-]*(?:years?|yrs?)/g,
+    /(\d+)\+[\s-]*(?:years?|yrs?)/g,
+    /minimum[\s-]*(\d+)[\s-]*(?:years?|yrs?)/g,
+    /atleast[\s-]*(\d+)[\s-]*(?:years?|yrs?)/g,
+    /(\d+)[\s-]*(?:years?|yrs?)[\s-]*(?:of[\s-]*)?experience/g,
+    /experience[\s-]*(?:of[\s-]*)?(\d+)[\s-]*(?:years?|yrs?)/g,
+  ];
+
+  const years = [];
+  yearPatterns.forEach((pattern) => {
+    let match;
+    while ((match = pattern.exec(allText)) !== null) {
+      if (match[1]) years.push(parseInt(match[1]));
+      if (match[2]) years.push(parseInt(match[2]));
+    }
+  });
+
+  if (years.length > 0) {
+    const maxYears = Math.max(...years);
+    const minYears = Math.min(...years);
+
+    if (minYears >= 3 || maxYears >= 4) return "experienced";
+    if (maxYears <= 1) return "fresher";
+    if (minYears <= 2 && maxYears <= 3) return "fresher";
+  }
+
+  const levelMatch = title.match(/\b(?:ii|iii|iv|v|2|3|4|5)\b/i);
+  if (levelMatch) return "experienced";
+
+  const experienceKeywords = [
+    "experienced",
+    "hands-on experience",
+    "hands on experience",
+    "proven experience",
+    "extensive experience",
+    "solid experience",
+    "strong experience",
+    "deep understanding",
+    "expert level",
+    "advanced knowledge",
+    "proficient in",
+    "mastery of",
+  ];
+
+  if (experienceKeywords.some((keyword) => description.includes(keyword))) {
+    return "experienced";
+  }
+
+  return "fresher";
+}
+
+const normalizeContractType = (contract_type = "", description = "") => {
+  const text = `${contract_type} ${description}`.toLowerCase();
+
+  if (/(consultant|contract\s*basis)/.test(text)) return "Contract";
+  if (/(temp|temporary)/.test(text)) return "Temporary";
+  if (/(fixed[\s-]?term|fixed[\s-]?duration)/.test(text)) return "Fixed-Term";
+  if (/(permanent|full[\s-]?time|ft)/.test(text)) return "Permanent";
+
+  return "Unspecified";
+};
+
+const normalizeWorkType = (contract_time = "") => {
+  const ct = contract_time.toLowerCase();
+  if (/(full|ft)/.test(ct)) return "Full-Time";
+  if (/(part|pt)/.test(ct)) return "Part-Time";
+  if (/internship/.test(ct)) return "Internship";
+  if (/freelance/.test(ct)) return "Freelance";
+  return "Unspecified";
+};
+
+const normalizeFilters = (filters = {}) => {
+  return {
+    companies: filters.Companies || filters.companies || [],
+    roles: filters.roles || [],
+    locations: filters.Locations || filters.locations || [],
+    workType: filters.Work_Type || filters.workType || [],
+    contractType: filters.Contract_Type || filters.contractType || [],
+    experienceLevel: filters.Experience_Level || filters.experienceLevel || [],
+    workplaceModel: filters.Workplace_Model || filters.workplaceModel || [],
+  };
+};
+
+const fetchJob = async (company, role, location, retries = 3, delay = 50) => {
+  const key = `${role}|${location}|${company}`;
+
+  if (cache.has(key)) {
+    console.log("Cache hit for:", key);
+    return cache.get(key);
+  }
+
+  return requestQueue.add(async () => {
+    // Double-check cache after queue
+    if (cache.has(key)) {
+      console.log("Cache hit for:", key);
+      return cache.get(key);
+    }
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await axios.get(BASE_URL, {
+          params: {
+            app_id: APP_ID,
+            app_key: APP_KEY,
+            results_per_page: 50,
+            what: `${company} ${role}`,
+            where: location,
+            sort_by: "date",
+            max_days_old: 30,
+          },
+        });
+
+        console.log("API call for:", key);
+        const jobs = res.data.results || [];
+        cache.set(key, jobs);
+        return jobs;
+      } catch (err) {
+        if (err.response?.status === 429) {
+          const waitTime = delay * Math.pow(2, attempt);
+          console.warn(
+            `429 Too Many Requests for ${key}. Retrying in ${waitTime}ms...`
+          );
+          await new Promise((res) => setTimeout(res, waitTime));
+        } else {
+          console.error(`Error fetching ${key}:`, err.message);
+          break;
+        }
+      }
+    }
+    return [];
+  });
+};
+
+const fetchAllJobs = async (filters) => {
+  const normalizedFilters = normalizeFilters(filters);
+  console.log("Processing jobs with filters:", normalizedFilters);
+
+  const {
+    roles,
+    locations,
+    companies,
+    workType,
+    contractType,
+    experienceLevel,
+    workplaceModel,
+  } = normalizedFilters;
+
+  // Create all API call promises
+  const apiPromises = [];
+
+  for (const company of companies) {
+    for (const role of roles) {
+      for (const loc of locations) {
+        apiPromises.push(fetchJob(company, role, loc));
+      }
+    }
+  }
+
+  // Execute all API calls in parallel
+  const jobArrays = await Promise.all(apiPromises);
+  const allJobs = [];
+
+  // Process all jobs from all API calls
+  for (const jobs of jobArrays) {
+    for (const job of jobs) {
+      // Extract and normalize job properties
+      const companyName = job.company?.display_name || "";
+      const workplaceModelValue = inferWorkplaceModel(
+        job.title,
+        job.description,
+        job.location?.display_name
+      );
+      const workTypeValue = normalizeWorkType(job.contract_time || "");
+      const contractTypeValue = normalizeContractType(
+        job.contract_type || "",
+        job.description
+      );
+      const experienceLevelValue = classifyJobExperience(job);
+
+      if (
+        workplaceModel.length > 0 &&
+        !matchesFilter(workplaceModel, workplaceModelValue)
+      ) {
+        continue;
+      }
+
+      if (workType.length > 0 && !matchesFilter(workType, workTypeValue)) {
+        continue;
+      }
+
+      if (
+        contractType.length > 0 &&
+        !matchesFilter(contractType, contractTypeValue)
+      ) {
+        continue;
+      }
+
+      if (
+        experienceLevel.length > 0 &&
+        !matchesFilter(experienceLevel, experienceLevelValue)
+      ) {
+        continue;
+      }
+
+      // If all filters passed, add to results
+      allJobs.push({
+        title: job.title,
+        company: companyName,
+        location: job.location?.display_name,
+        url: job.redirect_url,
+        created: job.created,
+        category: job.category?.label,
+        description: job.description,
+        salary_is_predicted: job.salary_is_predicted,
+        Workplace_Model: workplaceModelValue,
+        Work_Type: workTypeValue,
+        Contract_Type: contractTypeValue,
+        Experience_Level: experienceLevelValue,
+      });
+    }
+  }
+
+  return allJobs;
+};
+
+const getFilteredJobs = async (req, res) => {
+  try {
+    let { userId, filters } = req.body;
+    console.log("Received raw filters:", filters);
+
+    if (
+      !filters ||
+      !filters.roles?.length ||
+      !(filters.Locations?.length || filters.locations?.length)
+    ) {
+      const user = await userSchema.findById(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      filters = {
+        ...filters,
+        roles: user.preferedRoles || [],
+        Locations: user.preferedLocations || [],
+      };
+    }
+
+    const result = await fetchAllJobs(filters);
+    return res.status(200).json({
+      count: result.length,
+      jobs: result,
+    });
+  } catch (err) {
+    console.error("Error fetching filtered jobs:", err);
+    return res.status(500).json({
+      error: "Failed to fetch jobs.",
+      details: process.env.NODE_ENV === "development" ? err.message : undefined,
+    });
+  }
+};
+
+const getJobDetails = async (req, res) => {
+  try {
+    const jobObject = req.body;
+    const prompt = `You are an expert technical recruiter specializing in software engineering roles. Analyze the provided job posting and extract specific technical skills and core responsibilities.
+
+**Job Data:**
+${JSON.stringify(jobObject, null, 2)}
+
+**CRITICAL INSTRUCTIONS:**
+
+**For Skills - Extract ONLY specific technical skills like:**
+- Programming languages, Frameworks, Databases, Cloud platforms, Tools & Technologies, Technical concepts
+- NO soft skills or business domain knowledge
+- Each skill must be 1-2 words maximum
+
+**For Responsibilities - Extract core job duties:**
+- Start each with action verbs (Design, Develop, Build, Implement, etc.)
+- Focus on what the person will actually DO day-to-day
+- 8-15 words per responsibility
+- Avoid vague statements
+
+- At max 8-10 skills and 5-8 responsibilities
+
+**Output Format (JSON only):**
+\`\`\`json
+{
+  "skills": ["skill-1", "skill-2", "skill-3", "skill-4", "skill-5"],
+  "responsibilities": ["responsibility-1", "responsibility-2"]
+}
+\`\`\``;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const analysis = response.text();
+
+    try {
+      const jsonMatch = analysis.match(/```json\s*([\s\S]*?)\s*```/) ||
+        analysis.match(/```\s*([\s\S]*?)\s*```/) || [null, analysis];
+      const jsonStr = jsonMatch[1] || analysis;
+      parsedAnalysis = JSON.parse(jsonStr.trim());
+    } catch (parseError) {
+      console.error("JSON parsing error:", parseError);
+      return res.status(500).json("Failed to parse AI response as JSON");
+    }
+
+    if (!parsedAnalysis.skills || !parsedAnalysis.responsibilities) {
+      return res.status(500).json({
+        error: "Invalid response structure",
+        response: parsedAnalysis,
+      });
+    }
+
+    res.status(200).json(parsedAnalysis);
+  } catch (error) {
+    console.error("Error in main function:", error);
+    res
+      .status(500)
+      .json({ error: "Internal server error", message: error.message });
+  }
+};
+
+const matchResume = async (jobObject, resumeContent) => {
+  try {
+    // const prompt = `You are an expert career compatibility analyst. Your task is to compare a candidate's resume content with a given job object and assess their compatibility.
+
+    // **Input:**
+    // You will receive two variables:
+    // 1.  \`jobObject\`: A JSON object containing job details.
+    // 2.  \`resumeContent\`: A string containing the candidate's full resume text.
+
+    // **Output Format:**
+    // Your response MUST be a single JSON object, strictly following this structure:
+    // \`\`\`json
+    // {
+    //   "matchPercentage": number,
+    //   "matchedSkills": [],
+    //   "unmatchedSkills": [],
+    //   "improvementSuggestions": []
+    // }
+    // \`\`\`
+
+    // **Output Constraints (CRITICAL for accuracy AND adherence):**
+    // 1.  **\`matchPercentage\`**: A numerical value.
+    //     * **ABSOLUTELY CRITICAL: This value MUST be between 30 and 95 (inclusive) based on the compatibility.**
+    //     * **Regardless of your internal compatibility calculation, if it falls below 30, YOU MUST output 30. If it exceeds 95, YOU MUST output 95.** This strict adherence to the range is essential for the accuracy and validity of the final output format.
+    //     * The underlying assessment (why the match is low or high) should still be accurate, but the *final output number for this field* must conform to the specified range.
+    // 2.  **\`matchedSkills\`**:
+    //     * Must be an array of strings.
+    //     * Each string MUST represent a *technical skill* found in the \`resumeContent\` that is highly relevant to the \`jobObject\`.
+    //     * **CRITICAL: Each skill string MUST be 1 or 2 words ONLY.** For example, use "Java", "Python", "C", "React.js", "Node.js". **DO NOT** use "Java Programming", "Python Programming", "C Programming", or other multi-word descriptors.
+    //     * The array MUST contain **at most 10 skills**. Prioritize the *most important* matched technical skills from the job description.
+    // 3.  **\`unmatchedSkills\`**:
+    //     * Must be an array of strings.
+    //     * Each string MUST represent a *technical skill or a key technical/methodological/operational requirement* mentioned or clearly implied in the \`jobObject\` that is **not explicitly present or strongly demonstrated** in the \`resumeContent\`.
+    //     * **CRITICAL: Each skill string MUST be 1 or 2 words ONLY.** For example, use "Java", "Python", "C", "React.js", "Node.js". **DO NOT** use "Java Programming", "Python Programming", "C Programming", or other multi-word descriptors.
+    //     * The array MUST contain **at most 10 skills**. Prioritize the *most important* unmatched requirements.
+    // 4.  **\`improvementSuggestions\`**:
+    //     * Must be an array of strings.
+    //     * Each string MUST be a concise suggestion for the candidate to improve their fit for similar roles.
+    //     * Each suggestion MUST be **at most 10 words**.
+    //     * **The array MUST contain AT MOST 5-8 suggestions. Select ONLY the top 4-6 most crucial suggestions.**
+
+    // **Accuracy Requirement:**
+    // Provide the most accurate results possible, with absolutely no compromise on the detailed constraints and the precision of the compatibility assessment. Focus solely on the provided \`resumeContent\` and \`jobObject\` for your analysis.
+
+    // JobObject = ${JSON.stringify(jobObject)},
+    // ResumeContent = ${resumeContent}
+
+    // `;
+
+    const prompt = `You are an expert career compatibility analyst. Your task is to compare a candidate's resume with a given job description and generate a precise JSON compatibility analysis.
+
+**Input:**
+- jobObject: ${JSON.stringify(jobObject)}
+- resumeContent: ${resumeContent}
+
+**Task:**
+1. Analyze the technical skills, methodologies, tools, and requirements mentioned or implied in the jobObject.
+2. Compare them with the explicitly stated skills, experiences, and certifications in the resumeContent.
+3. Generate a JSON object strictly following the structure below.
+
+**Output Format (Strictly):**
+{
+  "matchPercentage": number,
+  "matchedSkills": [string],
+  "unmatchedSkills": [string],
+  "improvementSuggestions": [string]
+}
+
+**Output Constraints:**
+1. **matchPercentage**: 
+   - Based on how well the resume matches the core technical requirements of the job.
+2. **matchedSkills**:
+   - At most 10 strings.
+   - Each must be 1–2 words only (e.g., “Java”, “React.js”).
+   - Include only the *most important* relevant technical skills from the resume matching the job.
+3. **unmatchedSkills**:
+   - At most 6 strings.
+   - Each must be 1–2 words only.
+   - List only the *most critical* technical skills or key requirements from the job not clearly demonstrated in the resume.
+4. **improvementSuggestions**:
+   - Between 4–6 suggestions.
+   - Each suggestion must be concise and under 10 words.
+   - Prioritize the top improvements directly related to closing the skill gaps for this role.
+
+**Accuracy Requirements:**
+- Focus solely on technical skills and key methodology/operational requirements.
+- Do NOT infer soft skills or generic experience unless explicitly asked.
+- Ensure strict compliance with formatting rules.
+- Provide the most accurate result possible based on the inputs.
+
+**Final Output:**
+Return ONLY the JSON object without any additional text, explanation, or markdown.`;
+
+    // const result = await model.generateContent(prompt);
+    // const response = await result.response;
+    // const analysis = response.text();
+
+    const response = await together.chat.completions.create({
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      model: "Qwen/Qwen3-235B-A22B-fp8-tput",
+    });
+
+    const analysis = response.choices[0].message.content;
+    // console.log("This is Result : " , analysis);
+
+    // console.log(prompt);
+
+    // console.log("AI Analysis Raw Data:", analysis);
+
+    let parsedAnalysis;
+    try {
+      // Try multiple JSON extraction methods
+      let jsonStr = analysis;
+
+      // Method 1: Extract from code blocks
+      const jsonMatch = analysis.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+      }
+
+      // Method 2: Find JSON object pattern
+      const jsonObjectMatch = analysis.match(/\{[\s\S]*\}/);
+      if (!jsonMatch && jsonObjectMatch) {
+        jsonStr = jsonObjectMatch[0];
+      }
+
+      parsedAnalysis = JSON.parse(jsonStr.trim());
+    } 
+    catch (parseError) {
+      console.error("JSON parsing error:", parseError);
+      console.error("Raw analysis:", analysis);
+
+      // Return a default structure instead of empty string
+      return {
+        matchPercentage: 0,
+        matchedSkills: [],
+        unmatchedSkills: [],
+        improvementSuggestions: [
+          "Unable to analyze resume at this time. Please try again.",
+        ],
+        error: "JSON parsing failed",
+      };
+    }
+
+    // Validate response structure with more comprehensive checks
+    if (
+      typeof parsedAnalysis !== "object" ||
+      parsedAnalysis === null ||
+      typeof parsedAnalysis.matchPercentage !== "number" ||
+      !Array.isArray(parsedAnalysis.matchedSkills) ||
+      !Array.isArray(parsedAnalysis.unmatchedSkills) ||
+      !Array.isArray(parsedAnalysis.improvementSuggestions)
+    ) {
+      console.log("Invalid Response Structure:", parsedAnalysis);
+
+      // Return a default structure instead of empty string
+      return {
+        matchPercentage: 0,
+        matchedSkills: [],
+        unmatchedSkills: [],
+        improvementSuggestions: [
+          "Invalid analysis response. Please try again.",
+        ],
+        error: "Invalid response structure",
+      };
+    }
+
+    // Ensure percentage is within valid range
+    parsedAnalysis.matchPercentage = Math.max(
+      0,
+      Math.min(100, parsedAnalysis.matchPercentage)
+    );
+
+    return parsedAnalysis;
+  } catch (error) {
+    console.error("Error in matchResume function:", error);
+
+    // Return a default structure instead of empty string
+    return {
+      matchPercentage: 0,
+      matchedSkills: [],
+      unmatchedSkills: [],
+      improvementSuggestions: [
+        "Technical error occurred during analysis. Please try again.",
+      ],
+      error: error.message,
+    };
+  }
+};
+
+const getMatchAnalyticsFromMain = async (req, res) => {
+  try {
+    if (!req.body.userId || !req.body.jobObject) {
+      return res.status(400).json({
+        message: "Missing required fields: userId and jobObject",
+      });
+    }
+
+    const { userId, jobObject } = req.body;
+
+    const resumeData = await resumeSchema.find({ userId: userId });
+
+    if (!resumeData || resumeData.length === 0) {
+      return res.status(404).json({
+        message: "Resume not found for the provided user ID",
+      });
+    }
+
+    const matchResult = await matchResume(jobObject, resumeData[0].resume);
+
+    if (matchResult.error) {
+      return res.status(500).json({
+        message: "Error while matching resume with job description",
+        details: matchResult.error,
+        result: matchResult,
+      });
+    }
+
+    res.status(200).json(matchResult);
+  } catch (error) {
+    console.error("Error in getMatchAnalytics function:", error);
+    res.status(500).json({
+      message: "Internal server error during resume analysis",
+      error: error.message,
+    });
+  }
+};
+
+const getMatchAnalyticsFromTemp = async (req, res) => {
+  try {
+    const { userId, jobObject } = req.body;
+    const resumeFile = req.file;
+
+    if (!userId || !resumeFile || !jobObject) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const resumeContent = await sendBufferToAffinda( resumeFile.buffer, resumeFile.originalname, resumeFile.mimetype);
+
+    if (resumeContent.status === "rejected") {
+      return res.status(500).json({
+        error: "Failed to process resume",
+        details: resumeContent.reason?.message,
+      });
+    }
+
+    const finalMatchResult = await matchResume(jobObject, JSON.stringify(resumeContent));
+
+    console.log(finalMatchResult);
+
+    // if (finalMatchResult?.error) {
+    //   return res.status(500).json({
+    //     error: "Matching failed",
+    //     details: finalMatchResult.error,
+    //   });
+    // }
+
+    res.end(JSON.stringify(finalMatchResult));
+  }
+   catch (error) {
+    console.error("Error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Cache cleanup job
+cron.schedule("0 3 * * *", () => {
+  cache.clear();
+  console.log("Cache cleared at 3:00 AM");
+});
+
+module.exports = {
+  getFilteredJobs,
+  getJobDetails,
+  getMatchAnalyticsFromMain,
+  getMatchAnalyticsFromTemp,
+};

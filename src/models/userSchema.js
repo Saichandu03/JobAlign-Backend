@@ -4,6 +4,7 @@ const userSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
+    unique: true,
   },
   
   email: {
@@ -13,17 +14,11 @@ const userSchema = new mongoose.Schema({
   },
 
   password: {
-    type: String,
-    required: true,
+    type: String
   },
-
-  resumeURL: {
-    type: String,
-  },
-
-  skills: {
-    type: [String],
-    default: [],
+  dailyCounter: {
+    type: Number,
+    default: 3
   },
 
   createdAt: {

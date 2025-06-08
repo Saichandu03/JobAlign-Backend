@@ -4,6 +4,8 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const cron = require('node-cron')
+const axios = require('axios')
 
 dotenv.config();
 
@@ -24,15 +26,28 @@ mongoose.connect(process.env.MONGO_URI, {
 
 
 var userRouter = require("./src/routes/userRouter");
-
-
+var jobsRouter = require("./src/routes/jobsRouter");
+var resumeRouter = require("./src/routes/resumeRouter");
 
 
 app.use('/api', userRouter);
+app.use('/api', jobsRouter);
+app.use('/api', resumeRouter);
 
 // Sample route
 app.get('/', (req, res) => {
   res.send('Welcome to JobAlign!');
+});
+
+
+cron.schedule('*/14 * * * *', async () => {
+  try {
+    console.log("hello....");
+    const response = await axios.get('https://jobalign-backend.onrender.com/api/dummyCall');
+    console.log('Dummy API called at', new Date().toLocaleString());
+  } catch (error) {
+    console.error('Error calling dummy API:', error.message);
+  }
 });
 
 // Server start

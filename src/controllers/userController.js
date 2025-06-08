@@ -2,6 +2,7 @@ const nodemailer = require("nodemailer");
 const user = require("../models/userSchema");
 const otpSchema = require("../models/otpSchema");
 require("dotenv").config();
+const cron = require('node-cron');
 const https = require("https");
 process.env.TZ = "Asia/Kolkata";
 
@@ -23,13 +24,16 @@ let transporter = nodemailer.createTransport({
 // Create a new user
 const createUser = async (req, res) => {
   try {
-    console.log("This is user creation request:", req.body);
-    const { name, email, password, resumeURL, skills } = req.body;
+    const { name, email, password } = req.body;
 
-    // Check if user already exists
-    const existingUser = await user.find({ email });
-    if (existingUser.length > 0) {
-      return res.status(400).json({ message: "User already exists" });
+    const existingUserName = await user.findOne({ name });
+    if (existingUserName.length > 0) {
+      return res.status(400).json({ message: "User Name already exists" });
+    }
+
+    const existingUserEmail = await user.findOne({ email });
+    if (existingUserEmail.length > 0) {
+      return res.status(400).json({ message: "Email already exists" });
     }
 
     // Create new user
@@ -48,14 +52,27 @@ const createUser = async (req, res) => {
 
 const userLogin = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { userName, email, password } = req.body;
 
-    // Check if user exists
-    const existingUser = await user.find({ email, password });
-    if (existingUser.length > 0) {
-      return res.status(200).json({ message: "User logged in successfully" });
+    if (userName.length > 0) {
+      const existingUser = await user.findOne({ name: userName });
+      if (existingUser.length > 0) {
+        if (existingUser.password === password) {
+          res.status(200).json({ message: "User logged in successfully" });
+        } else {
+          return res.status(401).json({ message: "Invalid password" });
+        }
+      }
+    } else {
+      const existingUser = await user.findOne({ email: email });
+      if (existingUser.length > 0) {
+        if (existingUser.password === password) {
+          res.status(200).json({ message: "User logged in successfully" });
+        } else {
+          return res.status(401).json({ message: "Invalid password" });
+        }
+      }
     }
-    res.status(404).json({ message: "User not found" });
   } catch (error) {
     console.error("Error logging in user:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -74,19 +91,19 @@ const sendOtp = async (email) => {
 
   try {
     // Send email
-     await transporter.sendMail(mailOptions, (error, info) => {
-        if (error) {
-          console.log(`Error While Sending Otp to the user ${email} \n` + error);
-          return false;
-        }
-        console.log(`OtP sent successfully to : ${email} `);
-      });
+    await transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.log(`Error While Sending Otp to the user ${email} \n` + error);
+        return false;
+      }
+      console.log(`OtP sent successfully to : ${email} `);
+    });
     console.log(`OTP sent successfully to: ${email}`);
 
     // Save OTP to DB
     const existingOtp = await otpSchema.findOne({ email });
 
-    const expiry = new Date(Date.now() + 10 * 60 * 1000); 
+    const expiry = new Date(Date.now() + 10 * 60 * 1000);
     if (existingOtp) {
       existingOtp.otp = otp;
       existingOtp.expiresAt = expiry;
@@ -102,77 +119,81 @@ const sendOtp = async (email) => {
   }
 };
 
-
 const verifyOtp = async (email, otp) => {
   try {
     const existingOtp = await otpSchema.findOne({ email });
+
     if (!existingOtp) {
-      return 0; // Email not found
+      return 0; // OTP not found for email
     }
-    if (otp == existingOtp.otp) {
-      await otpSchema.delete({ email: email });
-      console.log("OTP deleted successfully");
-      return 1; // OTP verified successfully
+
+    if (otp === existingOtp.otp) {
+      return 1; // OTP verified
+    } else {
+      return 2; // OTP mismatch
     }
-    else{
-      return 2; // Invalid OTP
-    }
-  } 
-  catch (error) {
+  } catch (error) {
     console.error("Error verifying OTP:", error);
-    return 3; // Internal server error
+    return 3; // Internal error
   }
 };
 
-
 const sendUserOtp = async (req, res) => {
-  const{ email } = req.body;
-  if(sendOtp(email)){
+  const { email } = req.body;
+  if (sendOtp(email)) {
     res.status(200).json({ message: "OTP sent successfully" });
-  }
-  else {
+  } else {
     res.status(500).json({ message: "Failed to send OTP" });
   }
 };
 
 const verifyUserOtp = async (req, res) => {
   const { email, otp } = req.body;
-  if(verifyOtp(email, otp) === 0){
-    res.status(200).json({ message: "OTP not found, please try again" });
+
+  try {
+    const result = await verifyOtp(email, otp);
+
+    switch (result) {
+      case 0:
+        return res
+          .status(404)
+          .json({ message: "OTP not found. Please request a new one." });
+      case 1:
+        return res.status(200).json({ message: "OTP verified successfully." });
+      case 2:
+        return res
+          .status(401)
+          .json({ message: "Invalid OTP. Please try again." });
+      default:
+        return res.status(500).json({ message: "Internal server error." });
+    }
+  } catch (error) {
+    console.error("Error in verifyUserOtp:", error);
+    return res
+      .status(500)
+      .json({ message: "Something went wrong. Please try again later." });
   }
-  else if(verifyOtp(email, otp) === 1){
-    res.status(200).json({ message: "OTP verified successfully" });
-  }
-  else if(verifyOtp(email, otp) === 2){
-    res.status(400).json({ message: "Invalid OTP, please try again" });
-  }
-  else {
+};
+
+const updatePassword = async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const existingUser = await user.find({ email });
+    if (existingUser.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    await user.updateOne({ email }, { $set: { password } });
+    res.status(200).json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Error in forgotPassword:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
 
-const forgotPassword = async (req, res) => {
-  const { email } = req.body;
-  try {
-    const existingUser = await user.find({ email });
-    if (existingUser.length === 0) {
-      return res.status(404).json({ message: "Email not found" });
-    }
-    const otpSent = await sendOtp(email);
-
-    if (otpSent) {
-      res.status(200).json({ message: "OTP sent successfully" });
-    } else {
-      res.status(500).json({ message: "Failed to send OTP" });
-    }
-  }
-  catch (error) {
-    console.error("Error in forgotPassword:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
+const dummyCall = () =>{
+  console.log("Dummy call executed");
 }
-
 
 // Get all users
 const getAllUsers = async (req, res) => {
@@ -185,11 +206,21 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+cron.schedule('0 0 * * *', async () => {
+  try {
+    await user.updateMany({}, { $set: { dailyCounter: 3 } });
+    console.log('All dailyCounter fields reset to 3');
+  } catch (err) {
+    console.error('Error resetting dailyCounter:', err);
+  }
+});
+
 module.exports = {
   createUser,
   getAllUsers,
   userLogin,
   sendUserOtp,
   verifyUserOtp,
-  forgotPassword,
+  updatePassword,
+  dummyCall,
 };
