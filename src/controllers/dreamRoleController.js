@@ -201,6 +201,7 @@ const together = new Together({
 //   }
 // };
 
+
 const parseJson = (content) => {
   const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
   const match = content.match(jsonRegex);
@@ -421,7 +422,12 @@ const generateMissingData = async (existingData, dreamCompany, dreamRole) => {
   };
 };
 
-const saveNewDataToMasterCollections = async (newCompanyData, newRoleData, dreamCompany, dreamRole) => {
+const saveNewDataToMasterCollections = async (
+  newCompanyData,
+  newRoleData,
+  dreamCompany,
+  dreamRole
+) => {
   const saveOperations = [];
 
   try {
@@ -447,37 +453,126 @@ const saveNewDataToMasterCollections = async (newCompanyData, newRoleData, dream
       await Promise.all(saveOperations);
       console.log("Successfully saved new data to master collections");
     }
-  } 
-  catch (error) {
+  } catch (error) {
     console.error("Error saving new data to master collections:", error);
-    throw new Error(`Master collections save operation failed: ${error.message}`);
+    throw new Error(
+      `Master collections save operation failed: ${error.message}`
+    );
   }
 };
 
-const saveToDreamCollections = async (companyData, roleData, dreamCompany, dreamRole, userId) => {
+// const saveToDreamCollections = async (
+//   companyData,
+//   roleData,
+//   dreamCompany,
+//   dreamRole,
+//   userId
+// ) => {
+//   const saveOperations = [];
+
+//   try {
+//     if (companyData) {
+//       saveOperations.push(
+//         new dreamCompanySchema({
+//           userId: userId,
+//           ...companyData,
+//         }).save()
+//       );
+//     }
+
+//     if (roleData) {
+//       let skillsArray = null;
+
+//       if (Array.isArray(roleData)) {
+//         skillsArray = roleData;
+//       } else if (roleData[dreamRole] && Array.isArray(roleData[dreamRole])) {
+//         skillsArray = roleData[dreamRole];
+//       } else if (typeof roleData === "object") {
+//         const keys = Object.keys(roleData);
+//         for (const key of keys) {
+//           if (Array.isArray(roleData[key])) {
+//             skillsArray = roleData[key];
+//             break;
+//           }
+//         }
+//       }
+
+//       if (!Array.isArray(skillsArray)) {
+//         console.error("Could not find skills array in role data:", roleData);
+//         throw new Error(
+//           "Invalid role data structure - expected array of skills"
+//         );
+//       }
+
+//       const transformedSkills = skillsArray.map((skillGroup) => {
+//         if (!skillGroup || typeof skillGroup !== "object") {
+//           console.error("Invalid skill group:", skillGroup);
+//           throw new Error("Invalid skill group structure");
+//         }
+
+//         return {
+//           skillName:
+//             skillGroup.skill || skillGroup.skillName || "Unknown Skill",
+//           description:
+//             skillGroup.description || `Essential skill for ${dreamRole}`,
+//           topics: skillGroup.topics || [],
+//         };
+//       });
+
+//       saveOperations.push(
+//         new dreamRoleSchema({
+//           userId: userId,
+//           dreamRole: dreamRole,
+//           skills: transformedSkills,
+//         }).save()
+//       );
+//     }
+
+//     if (saveOperations.length > 0) {
+//       await Promise.all(saveOperations);
+//     }
+//   } catch (error) {
+//     console.error("Error saving data to dream collections:", error);
+//     console.error("Full error details:", error);
+//     throw new Error(
+//       `Dream collections save operation failed: ${error.message}`
+//     );
+//   }
+// };
+
+
+const saveToDreamCollections = async (
+  companyData,
+  roleData,
+  dreamCompany,
+  dreamRole,
+  userId
+) => {
   const saveOperations = [];
 
   try {
     if (companyData) {
       saveOperations.push(
-        new dreamCompanySchema({
-          userId: userId,
-          ...companyData,
-        }).save()
+        dreamCompanySchema.findOneAndUpdate(
+          { userId: userId },
+          { userId: userId, ...companyData },
+          { 
+            upsert: true, 
+            new: true,
+            runValidators: true 
+          }
+        )
       );
     }
 
     if (roleData) {
-      
       let skillsArray = null;
-      
+
       if (Array.isArray(roleData)) {
         skillsArray = roleData;
-      } 
-      else if (roleData[dreamRole] && Array.isArray(roleData[dreamRole])) {
+      } else if (roleData[dreamRole] && Array.isArray(roleData[dreamRole])) {
         skillsArray = roleData[dreamRole];
-      } 
-      else if (typeof roleData === 'object') {
+      } else if (typeof roleData === "object") {
         const keys = Object.keys(roleData);
         for (const key of keys) {
           if (Array.isArray(roleData[key])) {
@@ -486,57 +581,73 @@ const saveToDreamCollections = async (companyData, roleData, dreamCompany, dream
           }
         }
       }
-      
+
       if (!Array.isArray(skillsArray)) {
         console.error("Could not find skills array in role data:", roleData);
-        throw new Error("Invalid role data structure - expected array of skills");
+        throw new Error(
+          "Invalid role data structure - expected array of skills"
+        );
       }
-      
-      
-      const transformedSkills = skillsArray.map(skillGroup => {
-        if (!skillGroup || typeof skillGroup !== 'object') {
+
+      const transformedSkills = skillsArray.map((skillGroup) => {
+        if (!skillGroup || typeof skillGroup !== "object") {
           console.error("Invalid skill group:", skillGroup);
           throw new Error("Invalid skill group structure");
         }
-        
+
         return {
-          skillName: skillGroup.skill || skillGroup.skillName || 'Unknown Skill',
-          description: skillGroup.description || `Essential skill for ${dreamRole}`,
-          topics: skillGroup.topics || []
+          skillName:
+            skillGroup.skill || skillGroup.skillName || "Unknown Skill",
+          description:
+            skillGroup.description || `Essential skill for ${dreamRole}`,
+          topics: skillGroup.topics || [],
         };
       });
 
       saveOperations.push(
-        new dreamRoleSchema({
-          userId: userId,
-          dreamRole: dreamRole,
-          skills: transformedSkills,
-        }).save()
+        dreamRoleSchema.findOneAndUpdate(
+          { userId: userId },
+          {
+            userId: userId,
+            dreamRole: dreamRole,
+            skills: transformedSkills,
+          },
+          { 
+            upsert: true, 
+            new: true,
+            runValidators: true 
+          }
+        )
       );
     }
 
     if (saveOperations.length > 0) {
       await Promise.all(saveOperations);
     }
-  } 
-  catch (error) {
+  } catch (error) {
     console.error("Error saving data to dream collections:", error);
     console.error("Full error details:", error);
-    throw new Error(`Dream collections save operation failed: ${error.message}`);
+    throw new Error(
+      `Dream collections save operation failed: ${error.message}`
+    );
   }
 };
+
 
 const addDreamRole = async (req, res) => {
   try {
     const { userId, company, role } = req.body;
 
     if (!userId || !company || !role) {
-      return res.status(400).json("Missing required fields: userId, company, and role are required");
+      return res
+        .status(400)
+        .json(
+          "Missing required fields: userId, company, and role are required"
+        );
     }
 
     const dreamCompany = company.trim().toUpperCase();
     const dreamRole = role.trim().toUpperCase();
-
 
     const existingData = await checkExistingData(dreamCompany, dreamRole);
 
@@ -545,8 +656,8 @@ const addDreamRole = async (req, res) => {
 
     if (!existingData.hasCompany || !existingData.hasRole) {
       const { newCompanyData, newRoleData } = await generateMissingData(
-        existingData, 
-        dreamCompany, 
+        existingData,
+        dreamCompany,
         dreamRole
       );
 
@@ -558,22 +669,37 @@ const addDreamRole = async (req, res) => {
         return res.status(500).json("Failed to generate role skill roadmap");
       }
 
-      await saveNewDataToMasterCollections(newCompanyData, newRoleData, dreamCompany, dreamRole);
+
+      
+      await saveNewDataToMasterCollections(
+        newCompanyData,
+        newRoleData,
+        dreamCompany,
+        dreamRole
+      );
 
       if (newCompanyData) finalCompanyData = newCompanyData;
       if (newRoleData) finalRoleData = newRoleData;
     }
 
-    await saveToDreamCollections(finalCompanyData, finalRoleData, dreamCompany, dreamRole, userId);
+    await saveToDreamCollections(
+      finalCompanyData,
+      finalRoleData,
+      dreamCompany,
+      dreamRole,
+      userId
+    );
 
     return res.status(201).json("Dream role created successfully");
-
-  } 
-  catch (error) {
+  } catch (error) {
     console.error("Error in addDreamRole:", error);
-    return res.status(500).json("Internal server error while processing dream role");
+    return res
+      .status(500)
+      .json("Internal server error while processing dream role");
   }
 };
+
+
 module.exports = {
   addDreamRole,
 };

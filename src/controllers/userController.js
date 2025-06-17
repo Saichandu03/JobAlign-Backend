@@ -79,14 +79,14 @@ const userLogin = async (req, res) => {
     }
 
     if (existingUser.password !== password) {
-      return res.status(401).json("Invalid credentials");
+      return res.status(401).json("Invalid Password");
     }
 
-    return res.status(200).json("User logged in successfully");
+    return res.status(200).json({userId :existingUser._id ,message : "User logged in successfully"});
   } catch (error) {
     console.error("Error logging in user:", error);
     return res.status(500).json("Internal server error");
-  }
+  } 
 };
 
 // const sendOtp = async (email) => {
@@ -133,12 +133,117 @@ const sendOtp = async (email) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const expiry = new Date(Date.now() + 10 * 60 * 1000);
 
-  const mailOptions = {
+ const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
-    subject: `JobAlign OTP Service`,
-    text: `Your OTP is ${otp}. It will expire in 10 minutes.`,
-  };
+    subject: `Your JobAlign Verification Code - Expires in 10 Minutes`,
+    html: `<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>JobAlign OTP Verification</title>
+        <style>
+            body {
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                line-height: 1.5;
+                color: #333;
+                background-color: #f8fafc;
+                margin: 0;
+                padding: 20px;
+            }
+            .container {
+                max-width: 480px;
+                margin: 20px auto;
+                background: white;
+                border-radius: 12px;
+                padding: 40px 30px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 25px;
+            }
+            .logo {
+                font-size: 22px;
+                font-weight: 600;
+                color: #1e40af;
+                margin-bottom: 5px;
+            }
+            .otp-container {
+                margin: 30px 0;
+                text-align: center;
+            }
+            .otp-code {
+                display: inline-block;
+                font-size: 36px;
+                font-weight: 700;
+                letter-spacing: 8px;
+                color: #1e40af;
+                padding: 15px 20px;
+                background: #f1f5f9;
+                border-radius: 8px;
+                margin: 15px 0;
+                font-family: monospace;
+            }
+            .note {
+                color: #64748b;
+                font-size: 15px;
+                text-align: center;
+                margin: 20px 0;
+                line-height: 1.6;
+            }
+            .expiry {
+                color: #dc2626;
+                font-size: 14px;
+                text-align: center;
+                margin-top: 10px;
+            }
+            .footer {
+                text-align: center;
+                margin-top: 40px;
+                padding-top: 20px;
+                border-top: 1px solid #e2e8f0;
+                color: #94a3b8;
+                font-size: 13px;
+            }
+            @media (max-width: 600px) {
+                .container {
+                    padding: 30px 20px;
+                    margin: 10px;
+                }
+                .otp-code {
+                    font-size: 28px;
+                    letter-spacing: 6px;
+                    padding: 12px 15px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="logo">JobAlign</div>
+            </div>
+            
+            <div class="otp-container">
+                <div class="otp-code">${otp}</div>
+                <div class="expiry">Valid for 10 minutes only</div>
+            </div>
+            
+            <div class="note">
+                <p>Please enter this verification code to complete your request.</p>
+                <p>Do not share this code with anyone.</p>
+            </div>
+            
+            <div class="footer">
+                <p>If you didn't request this code, you can safely ignore this email.</p>
+                <p>© ${new Date().getFullYear()} JobAlign. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>`
+};
 
   try {
     // Execute email sending and DB operations in parallel
@@ -463,9 +568,6 @@ const getUserData = async (req, res) => {
   }
 };
 
-const dummyCall = () => {
-  console.log("Dummy call executed");
-};
 
 // Get all users
 const getAllUsers = async (req, res) => {
@@ -499,5 +601,4 @@ module.exports = {
   updatePreferedLocations,
   updateContactDetails,
   getUserData,
-  dummyCall,
 };

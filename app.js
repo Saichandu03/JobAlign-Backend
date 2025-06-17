@@ -42,15 +42,6 @@ app.get('/', (req, res) => {
 });
 
 
-cron.schedule('*/14 * * * *', async () => {
-  try {
-    const response = await axios.get('https://jobalign-backend.onrender.com/api/dummyCall');
-    console.log('Dummy API called at', new Date().toLocaleString());
-  } catch (error) {
-    console.error('Error calling dummy API:', error.message);
-  }
-});
-
 // Server start
 const port = process.env.PORT || 5000;
 app.listen(port , function(){
