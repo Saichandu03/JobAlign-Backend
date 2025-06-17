@@ -2,9 +2,11 @@ const Resume = require("../models/resumeSchema");
 const cloudinary = require("cloudinary").v2;
 const FormData = require("form-data");
 const axios = require("axios");
+const pdfParse = require("pdf-parse");
 require("dotenv").config();
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const userSchema = require("../models/userSchema");
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -62,30 +64,31 @@ async function uploadToCloudinary(
       .end(buffer);
   });
 }
+
 // Send resume file buffer to Affinda for parsing
-async function sendBufferToAffinda(buffer, filename, mimetype) {
-  const form = new FormData();
-  form.append("file", buffer, {
-    filename,
-    contentType: mimetype,
-  });
+// async function sendBufferToAffinda(buffer, filename, mimetype) {
+//   const form = new FormData();
+//   form.append("file", buffer, {
+//     filename,
+//     contentType: mimetype,
+//   });
 
-  const response = await axios.post(
-    "https://api.affinda.com/v1/resumes",
-    form,
-    {
-      headers: {
-        ...form.getHeaders(),
-        Authorization: `Bearer ${process.env.AFFINDA_API_KEY}`,
-      },
-    }
-  );
+//   const response = await axios.post(
+//     "https://api.affinda.com/v1/resumes",
+//     form,
+//     {
+//       headers: {
+//         ...form.getHeaders(),
+//         Authorization: `Bearer ${process.env.AFFINDA_API_KEY}`,
+//       },
+//     }
+//   );
 
-  const documentId = response.data.meta.identifier;
-  if (!documentId) throw new Error("Affinda did not return a document ID");
+//   const documentId = response.data.meta.identifier;
+//   if (!documentId) throw new Error("Affinda did not return a document ID");
 
-  return response.data;
-}
+//   return response.data;
+// }
 
 // Save parsed resume to MongoDB
 async function saveResumeContent(userId, fileName, data, resumeUrl) {
@@ -118,7 +121,7 @@ async function saveResumeContent(userId, fileName, data, resumeUrl) {
 // Main controller function
 const addResume = async (req, res) => {
   try {
-    const userId = req.params.userId;
+    const userId = req.body.userId;
     const file = req.file;
 
     if (!userId || !file) {
@@ -128,19 +131,22 @@ const addResume = async (req, res) => {
     // Parallel Cloudinary + Affinda
     const [resumeUrl, parsedResume] = await Promise.all([
       uploadToCloudinary(userId, file.buffer, file.originalname),
-      sendBufferToAffinda(file.buffer, file.originalname, file.mimetype),
+      // sendBufferToAffinda(file.buffer, file.originalname, file.mimetype),
+      pdfParse(file.buffer),
     ]);
 
-    const savedResume = await saveResumeContent(
-      userId,
-      file.originalname,
-      parsedResume,
-      resumeUrl
-    );
+    const [savedResume, updatedUser] = await Promise.all([
+      saveResumeContent(userId, file.originalname, parsedResume, resumeUrl),
+      userSchema.findByIdAndUpdate(
+        userId,
+        { $set: { resumeUrl: resumeUrl } },
+        { new: true }
+      ),
+    ]);
 
     return res
       .status(200)
-      .json({ message: "Resume uploaded, parsed, and saved successfully" });
+      .json("Resume uploaded, parsed, and saved successfully");
   } catch (err) {
     console.error("[Resume Upload Error]", err);
     return res
@@ -149,8 +155,86 @@ const addResume = async (req, res) => {
   }
 };
 
+const checkATS = async (req, res) => {
+  const file = req.file;
+  const userId = req.body.userId;
+  const resumeText = await pdfParse(file.buffer);
 
+  try {
+    const prompt = `You are an expert ATS (Applicant Tracking System) analyzer. Analyze ONLY resumes and CVs for technical roles. For any non-resume content, respond with "This is not a resume/CV content."
 
+For resume/CV content, provide analysis in this exact JSON format:
 
+{
+  "percentage": [number 0-100],
+  "strengths": [
+    "[strength - 1]",
+    "[strength - 2]"...
+  ],
+  "issues": [
+    "[ ATS/formatting/technical issue - 1]",
+    "[ ATS/formatting/technical issue - 2]"...
+  ],
+  "improvements": [
+    "[improvement -1]",
+    "[improvement -2]"....
+  ]
+}
 
-module.exports = { addResume, sendBufferToAffinda };
+Rules:
+- Only analyze resumes/CVs, reject other content types
+- Be SPECIFIC and CLEAR in every point
+- Each point must be exactly 10 words or less but highly detailed
+- Provide atmost 6 points per section
+- Mention exact technologies, frameworks, versions when possible
+- ATS score based on parsing issues, keyword optimization, technical depth
+- Identify specific formatting problems affecting ATS parsing
+- Focus on concrete technical skills gaps and improvements
+- Avoid generic advice, provide actionable specific recommendations
+
+Resume Content: ${resumeText.text}
+`;
+
+    const result = await model.generateContent(prompt);
+
+    function extractAndParseJson(responseString) {
+      try {
+        // Extract JSON from markdown code blocks
+        const jsonMatch = responseString.match(/```json\s*([\s\S]*?)\s*```/);
+
+        if (jsonMatch) {
+          const jsonString = jsonMatch[1].trim();
+          return JSON.parse(jsonString);
+        } else {
+          // Try to find JSON without code blocks
+          const jsonStart = responseString.indexOf("{");
+          const jsonEnd = responseString.lastIndexOf("}") + 1;
+
+          if (jsonStart !== -1 && jsonEnd > jsonStart) {
+            const jsonString = responseString.substring(jsonStart, jsonEnd);
+            return JSON.parse(jsonString);
+          }
+        }
+
+        return null;
+      } catch (error) {
+        console.error("Error extracting JSON:", error);
+        return null;
+      }
+    }
+
+    const parsedJson = extractAndParseJson(result.response.text());
+    if (parsedJson === null) {
+      res.status(201).json("Please Provide a Valid Resume");
+    } else {
+      res.status(200).json(parsedJson);
+    }
+  } catch (error) {
+    console.error("Error in main function:", error);
+    res
+      .status(500)
+      .json({ error: "Internal server error", message: error.message });
+  }
+};
+
+module.exports = { addResume, checkATS };

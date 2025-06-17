@@ -2,8 +2,9 @@ const nodemailer = require("nodemailer");
 const user = require("../models/userSchema");
 const otpSchema = require("../models/otpSchema");
 require("dotenv").config();
-const cron = require('node-cron');
+const cron = require("node-cron");
 const https = require("https");
+const userSchema = require("../models/userSchema");
 process.env.TZ = "Asia/Kolkata";
 
 const agent = new https.Agent({
@@ -26,13 +27,18 @@ const createUser = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    const existingUserName = await user.findOne({ name });
-    if (existingUserName.length > 0) {
+    console.log(req.body);
+
+    const existingUserName = await user.findOne({ name: name });
+
+    console.log(existingUserName);
+
+    if (existingUserName) {
       return res.status(400).json({ message: "User Name already exists" });
     }
 
-    const existingUserEmail = await user.findOne({ email });
-    if (existingUserEmail.length > 0) {
+    const existingUserEmail = await user.findOne({ email: email });
+    if (existingUserEmail) {
       return res.status(400).json({ message: "Email already exists" });
     }
 
@@ -52,69 +58,137 @@ const createUser = async (req, res) => {
 
 const userLogin = async (req, res) => {
   try {
-    const { userName, email, password } = req.body;
+    const { name, email, password } = req.body;
 
-    if (userName.length > 0) {
-      const existingUser = await user.findOne({ name: userName });
-      if (existingUser.length > 0) {
-        if (existingUser.password === password) {
-          res.status(200).json({ message: "User logged in successfully" });
-        } else {
-          return res.status(401).json({ message: "Invalid password" });
-        }
-      }
-    } else {
-      const existingUser = await user.findOne({ email: email });
-      if (existingUser.length > 0) {
-        if (existingUser.password === password) {
-          res.status(200).json({ message: "User logged in successfully" });
-        } else {
-          return res.status(401).json({ message: "Invalid password" });
-        }
-      }
+    console.log(req.body);
+
+    if (!email && !name) {
+      return res.status(400).json("Please enter either email or UserName");
     }
+
+    if (!password) {
+      return res.status(400).json("Password is required");
+    }
+
+    const query = email ? { email: email } : { name: name };
+
+    const existingUser = await user.findOne(query);
+
+    if (!existingUser) {
+      return res.status(404).json("User Not Found");
+    }
+
+    if (existingUser.password !== password) {
+      return res.status(401).json("Invalid credentials");
+    }
+
+    return res.status(200).json("User logged in successfully");
   } catch (error) {
     console.error("Error logging in user:", error);
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json("Internal server error");
   }
 };
 
+// const sendOtp = async (email) => {
+//   const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+//   const mailOptions = {
+//     from: process.env.EMAIL_USER,
+//     to: email,
+//     subject: `JobAlign OTP Service`,
+//     text: `Your OTP is ${otp}. It will expire in 10 minutes.`,
+//   };
+
+//   try {
+//     // Send email
+//     await transporter.sendMail(mailOptions, (error, info) => {
+//       if (error) {
+//         console.log(`Error While Sending Otp to the user ${email} \n` + error);
+//         return false;
+//       }
+//       console.log(`OtP sent successfully to : ${email} `);
+//     });
+//     console.log(`OTP sent successfully to: ${email}`);
+
+//     // Save OTP to DB
+//     const existingOtp = await otpSchema.findOne({ email });
+
+//     const expiry = new Date(Date.now() + 10 * 60 * 1000);
+//     if (existingOtp) {
+//       existingOtp.otp = otp;
+//       existingOtp.expiresAt = expiry;
+//       await existingOtp.save();
+//     } else {
+//       const newOtp = new otpSchema({ email, otp, expiresAt: expiry });
+//       await newOtp.save();
+//     }
+//     return true;
+//   } catch (error) {
+//     console.error("Error in sendOtp1:", error);
+//     return false;
+//   }
+// };
+
 const sendOtp = async (email) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiry = new Date(Date.now() + 10 * 60 * 1000);
 
   const mailOptions = {
-    from: "saichanduadapa951@gmail.com",
+    from: process.env.EMAIL_USER,
     to: email,
     subject: `JobAlign OTP Service`,
     text: `Your OTP is ${otp}. It will expire in 10 minutes.`,
   };
 
   try {
-    // Send email
-    await transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.log(`Error While Sending Otp to the user ${email} \n` + error);
-        return false;
-      }
-      console.log(`OtP sent successfully to : ${email} `);
-    });
-    console.log(`OTP sent successfully to: ${email}`);
+    // Execute email sending and DB operations in parallel
+    const [emailResult, dbResult] = await Promise.allSettled([
+      // Email sending promise
+      new Promise((resolve, reject) => {
+        transporter.sendMail(mailOptions, (error, info) => {
+          if (error) {
+            console.log(
+              `Error While Sending Otp to the user ${email} \n` + error
+            );
+            reject(error);
+          } else {
+            console.log(`OTP sent successfully to: ${email}`);
+            resolve(info);
+          }
+        });
+      }),
 
-    // Save OTP to DB
-    const existingOtp = await otpSchema.findOne({ email });
+      // Database operation promise
+      (async () => {
+        const existingOtp = await otpSchema.findOne({ email });
 
-    const expiry = new Date(Date.now() + 10 * 60 * 1000);
-    if (existingOtp) {
-      existingOtp.otp = otp;
-      existingOtp.expiresAt = expiry;
-      await existingOtp.save();
-    } else {
-      const newOtp = new otpSchema({ email, otp, expiresAt: expiry });
-      await newOtp.save();
+        if (existingOtp) {
+          existingOtp.otp = otp;
+          existingOtp.expiresAt = expiry;
+          await existingOtp.save();
+        } else {
+          const newOtp = new otpSchema({ email, otp, expiresAt: expiry });
+          await newOtp.save();
+        }
+      })(),
+    ]);
+
+    // Check if both operations succeeded
+    const emailSuccess = emailResult.status === "fulfilled";
+    const dbSuccess = dbResult.status === "fulfilled";
+
+    if (!emailSuccess) {
+      console.error("Email sending failed:", emailResult.reason);
     }
-    return true;
+
+    if (!dbSuccess) {
+      console.error("Database operation failed:", dbResult.reason);
+    }
+
+    // Return true only if both operations succeeded
+    return emailSuccess && dbSuccess;
   } catch (error) {
-    console.error("Error in sendOtp1:", error);
+    console.error("Error in sendOtp:", error);
     return false;
   }
 };
@@ -140,6 +214,9 @@ const verifyOtp = async (email, otp) => {
 
 const sendUserOtp = async (req, res) => {
   const { email } = req.body;
+  if (!email) {
+    res.status(400).send("Email is Required");
+  }
   if (sendOtp(email)) {
     res.status(200).json({ message: "OTP sent successfully" });
   } else {
@@ -151,33 +228,36 @@ const verifyUserOtp = async (req, res) => {
   const { email, otp } = req.body;
 
   try {
+    if (!email || !otp) {
+      res.status(400).send("Email and OTP are required");
+    }
+
     const result = await verifyOtp(email, otp);
 
     switch (result) {
       case 0:
-        return res
-          .status(404)
-          .json({ message: "OTP not found. Please request a new one." });
+        return res.status(404).json("OTP not found. Please request a new one.");
       case 1:
-        return res.status(200).json({ message: "OTP verified successfully." });
+        return res.status(200).json("OTP verified successfully.");
       case 2:
-        return res
-          .status(401)
-          .json({ message: "Invalid OTP. Please try again." });
+        return res.status(401).json("Invalid OTP. Please try again.");
       default:
-        return res.status(500).json({ message: "Internal server error." });
+        return res.status(500).json("Internal server error.");
     }
   } catch (error) {
     console.error("Error in verifyUserOtp:", error);
     return res
       .status(500)
-      .json({ message: "Something went wrong. Please try again later." });
+      .json("Something went wrong. Please try again later.");
   }
 };
 
 const updatePassword = async (req, res) => {
   const { email, password } = req.body;
   try {
+    if (!email || !password) {
+      res.status(400).send("Email and Password are required");
+    }
     const existingUser = await user.find({ email });
     if (existingUser.length === 0) {
       return res.status(404).json({ message: "User not found" });
@@ -190,10 +270,202 @@ const updatePassword = async (req, res) => {
   }
 };
 
+// const updateUserDetails = async(req, res) =>{
+//   const {userId, name , roles, locations } = req.body;
+//   try{
+//     const user = userSchema.findByIdAndUpdate({
+//       name.length > 0 && name : name,
+//       roles.length > 0 && userRoles : roles,
+//       locations.length > 0 &&  userLocations : locations
+//     });
+//     res.status(200).send("User Data Updated Successfully")
+// }
+// catch(err){
+//   console.log("Error ", err);
+//   res.status(500).send("Internal Server Error ", err);
+// }
+// }
 
-const dummyCall = () =>{
+const updateUserDetails = async (req, res) => {
+  try {
+    const { userId, name, role, experienceLevel } = req.body;
+
+    if (!userId) {
+      return res.status(400).json("Valid userId is required");
+    }
+
+    if (!name && !role && !experienceLevel) {
+      return res.status(400).json("At least one field is required");
+    }
+
+    const existingUser = await userSchema.findById(userId);
+
+    if (!existingUser) {
+      return res.status(404).json("User not found");
+    }
+    const trimmedName = name && name.trim();
+
+    if (trimmedName !== existingUser.name) {
+      const nameExists = await userSchema.findOne({
+        name: trimmedName,
+        _id: { $ne: userId },
+      });
+
+      if (nameExists) {
+        return res.status(409).json("Username already exists");
+      }
+    }
+
+    const trimmedExperienceLevel = experienceLevel && experienceLevel.trim();
+    const trimmedRole = role && role.trim();
+
+    const updateData = {
+      name: trimmedName,
+      role: trimmedRole,
+      experienceLevel: trimmedExperienceLevel,
+    };
+
+    const updatedUser = await userSchema.findByIdAndUpdate(userId, updateData, {
+      new: true,
+      runValidators: true,
+      select: "-password",
+    });
+
+    res.status(200).json("User details updated successfully");
+  } catch (err) {
+    console.error("Error updating user details:", err);
+    res.status(500).json("Internal server error");
+  }
+};
+
+const updateContactDetails = async (req, res) => {
+  try {
+    const { userId, email, phone, location } = req.body;
+
+    if (!userId) {
+      return res.status(400).json("Valid userId is required");
+    }
+
+    if (!email && !phone && !location) {
+      return res.status(400).json("At least one field is required");
+    }
+
+    const existingUser = await userSchema.findById(userId);
+
+    if (!existingUser) {
+      return res.status(404).json("User not found");
+    }
+    const trimmedEmail = email && email.trim();
+
+    if (trimmedEmail !== existingUser.email) {
+      const emailExists = await userSchema.findOne({
+        email: trimmedEmail,
+        _id: { $ne: userId },
+      });
+
+      if (emailExists) {
+        return res.status(409).json("Email already exists");
+      }
+    }
+
+    const trimmedLocation = location && location.trim();
+    const trimmedphone = phone && phone.trim();
+
+    const updateData = {
+      email: trimmedEmail,
+      phone: trimmedphone,
+      location: trimmedLocation,
+    };
+
+    const updatedUser = await userSchema.findByIdAndUpdate(userId, updateData, {
+      new: true,
+      runValidators: true,
+      select: "-password",
+    });
+
+    res.status(200).json("User details updated successfully");
+  } catch (err) {
+    console.error("Error updating user details:", err);
+    res.status(500).json("Internal server error");
+  }
+};
+
+const updatePreferedRoles = async (req, res) => {
+  try {
+    const { userId, preferedRoles } = req.body;
+
+    if (!userId) {
+      return res.status(400).send("User Id is required");
+    }
+    if (!preferedRoles) {
+      return res.status(400).send("Prefered Roles are required");
+    }
+
+    console.log(typeof preferedRoles, preferedRoles);
+
+    const updatedUser = await userSchema.findByIdAndUpdate(
+      userId,
+      { preferedRoles: preferedRoles },
+      {
+        new: true,
+        runValidators: true,
+        select: "-password",
+      }
+    );
+
+    res.status(200).send("Data Updated Successfully");
+  } catch (err) {
+    console.log("Error : ", err);
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+const updatePreferedLocations = async (req, res) => {
+  try {
+    const { userId, preferedLocations } = req.body;
+
+    if (!userId) {
+      return res.status(400).send("User Id is required");
+    }
+    if (!preferedLocations) {
+      return res.status(400).send("Prefered Locations are required");
+    }
+
+    const updatedUser = await userSchema.findByIdAndUpdate(
+      userId,
+      { preferedLocations: preferedLocations },
+      {
+        new: true,
+        runValidators: true,
+        select: "-password",
+      }
+    );
+
+    res.status(200).send("Data Updated Successfully");
+  } catch (err) {
+    console.log("Error : ", err);
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+const getUserData = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if(!userId){
+      return res.status(400).send("User Id is required");
+    }
+    const userData = await userSchema.findById(userId).select("-password");
+    res.status(200).send(userData);
+  } 
+  catch (err) {
+    console.log("Error : ", err);
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+const dummyCall = () => {
   console.log("Dummy call executed");
-}
+};
 
 // Get all users
 const getAllUsers = async (req, res) => {
@@ -206,12 +478,12 @@ const getAllUsers = async (req, res) => {
   }
 };
 
-cron.schedule('0 0 * * *', async () => {
+cron.schedule("0 0 * * *", async () => {
   try {
     await user.updateMany({}, { $set: { dailyCounter: 3 } });
-    console.log('All dailyCounter fields reset to 3');
+    console.log("All dailyCounter fields reset to 3");
   } catch (err) {
-    console.error('Error resetting dailyCounter:', err);
+    console.error("Error resetting dailyCounter:", err);
   }
 });
 
@@ -222,5 +494,10 @@ module.exports = {
   sendUserOtp,
   verifyUserOtp,
   updatePassword,
+  updateUserDetails,
+  updatePreferedRoles,
+  updatePreferedLocations,
+  updateContactDetails,
+  getUserData,
   dummyCall,
 };

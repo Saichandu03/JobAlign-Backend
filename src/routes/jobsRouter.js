@@ -1,6 +1,5 @@
 const express = require("express");
 const Router = express.Router();
-const router = express.Router();
 const multer = require('multer');
 const {getFilteredJobs, getJobDetails, getMatchAnalyticsFromMain, getMatchAnalyticsFromTemp} = require("../controllers/jobsControllers");
 

@@ -1,16 +1,20 @@
 const axios = require("axios");
 const cron = require("node-cron");
-const LRU = require("lru-cache");
+const { LRUCache } = require('lru-cache');
+const pdfParse = require("pdf-parse");
 const userSchema = require("../models/userSchema");
 const resumeSchema = require("../models/resumeSchema");
 require("dotenv").config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { sendBufferToAffinda } = require("./resumeController");
+// const { sendBufferToAffinda } = require("./resumeController");
 
 const Together = require("together-ai");
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
+const genAI1 = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY_1);
+
+// const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model1 = genAI1.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const together = new Together({
   apiKey: process.env.TOGETHER_API_KEY,
@@ -20,8 +24,8 @@ const APP_ID = process.env.ADZUNA_APP_ID;
 const APP_KEY = process.env.ADZUNA_APP_KEY;
 const BASE_URL = process.env.ADZUNA_BASE_URL;
 
-const cache = new LRU({
-  max: 10000,
+const cache = new LRUCache({
+  max: 100000,
   ttl: 1000 * 60 * 60 * 24, // 24 hours
 });
 
@@ -324,6 +328,151 @@ const fetchJob = async (company, role, location, retries = 3, delay = 50) => {
   });
 };
 
+// const fetchAllJobs = async (filters) => {
+//   const normalizedFilters = normalizeFilters(filters);
+//   console.log("Processing jobs with filters:", normalizedFilters);
+
+//   const {
+//     roles,
+//     locations,
+//     companies,
+//     workType,
+//     contractType,
+//     experienceLevel,
+//     workplaceModel,
+//   } = normalizedFilters;
+
+//   // Create all API call promises
+//   const apiPromises = [];
+
+//   for (const company of companies) {
+//     for (const role of roles) {
+//       for (const loc of locations) {
+//         apiPromises.push(fetchJob(company, role, loc));
+//       }
+//     }
+//   }
+
+//   // Execute all API calls in parallel
+//   const jobArrays = await Promise.all(apiPromises);
+//   const allJobs = [];
+
+//   // Process all jobs from all API calls
+//   for (const jobs of jobArrays) {
+//     for (const job of jobs) {
+//       // Extract and normalize job properties
+//       const companyName = job.company?.display_name || "";
+//       const workplaceModelValue = inferWorkplaceModel(
+//         job.title,
+//         job.description,
+//         job.location?.display_name
+//       );
+//       const workTypeValue = normalizeWorkType(job.contract_time || "");
+//       const contractTypeValue = normalizeContractType(
+//         job.contract_type || "",
+//         job.description
+//       );
+//       const experienceLevelValue = classifyJobExperience(job);
+
+//       if (
+//         workplaceModel.length > 0 &&
+//         !matchesFilter(workplaceModel, workplaceModelValue)
+//       ) {
+//         continue;
+//       }
+
+//       if (workType.length > 0 && !matchesFilter(workType, workTypeValue)) {
+//         continue;
+//       }
+
+//       if (
+//         contractType.length > 0 &&
+//         !matchesFilter(contractType, contractTypeValue)
+//       ) {
+//         continue;
+//       }
+
+//       if (
+//         experienceLevel.length > 0 &&
+//         !matchesFilter(experienceLevel, experienceLevelValue)
+//       ) {
+//         continue;
+//       }
+
+//       // If all filters passed, add to results
+//       allJobs.push({
+//         title: job.title,
+//         company: companyName,
+//         location: job.location?.display_name,
+//         url: job.redirect_url,
+//         created: job.created,
+//         category: job.category?.label,
+//         description: job.description,
+//         salary_is_predicted: job.salary_is_predicted,
+//         Workplace_Model: workplaceModelValue,
+//         Work_Type: workTypeValue,
+//         Contract_Type: contractTypeValue,
+//         Experience_Level: experienceLevelValue,
+//       });
+//     }
+//   }
+
+//   return allJobs;
+// };
+
+
+
+// const fetchJob = async (company, role, location, retries = 3, delay = 50) => {
+//   const key = `${role || ''}|${location || ''}|${company || ''}`;
+
+//   if (cache.has(key)) {
+//     console.log("Cache hit for:", key);
+//     return cache.get(key);
+//   }
+
+//   return requestQueue.add(async () => {
+//     if (cache.has(key)) {
+//       console.log("Cache hit (inside queue) for:", key);
+//       return cache.get(key);
+//     }
+
+//     for (let attempt = 0; attempt <= retries; attempt++) {
+//       try {
+//         const query = [company, role].filter(Boolean).join(' ');
+//         const res = await axios.get(BASE_URL, {
+//           params: {
+//             app_id: APP_ID,
+//             app_key: APP_KEY,
+//             results_per_page: 50,
+//             what: query || undefined,
+//             where: location || undefined,
+//             sort_by: "date",
+//             max_days_old: 30,
+//           },
+//         });
+
+//         const jobs = res.data?.results || [];
+//         cache.set(key, jobs);
+//         return jobs;
+//       } 
+//       catch (err) {
+//         if (err.response?.status === 429) {
+//           const waitTime = delay * Math.pow(2, attempt);
+//           console.warn(`429 for ${key}, retrying in ${waitTime}ms...`);
+//           await new Promise((res) => setTimeout(res, waitTime));
+//         }
+//          else {
+//           console.error(`Error fetching ${key}:`, err.message);
+//           break;
+//         }
+//       }
+//     }
+
+//     return [];
+//   });
+// };
+
+
 const fetchAllJobs = async (filters) => {
   const normalizedFilters = normalizeFilters(filters);
   console.log("Processing jobs with filters:", normalizedFilters);
@@ -338,25 +487,27 @@ const fetchAllJobs = async (filters) => {
     workplaceModel,
   } = normalizedFilters;
 
-  // Create all API call promises
+  // Graceful fallback: use empty string to allow broad queries
+  const safeRoles = roles.length ? roles : [''];
+  const safeLocations = locations.length ? locations : [''];
+  const safeCompanies = companies.length ? companies : [''];
+
   const apiPromises = [];
 
-  for (const company of companies) {
-    for (const role of roles) {
-      for (const loc of locations) {
-        apiPromises.push(fetchJob(company, role, loc));
+  for (const company of safeCompanies) {
+    for (const role of safeRoles) {
+      for (const location of safeLocations) {
+        apiPromises.push(fetchJob(company, role, location));
       }
     }
   }
 
-  // Execute all API calls in parallel
+  // Wait for all API responses
   const jobArrays = await Promise.all(apiPromises);
   const allJobs = [];
 
-  // Process all jobs from all API calls
   for (const jobs of jobArrays) {
     for (const job of jobs) {
-      // Extract and normalize job properties
       const companyName = job.company?.display_name || "";
       const workplaceModelValue = inferWorkplaceModel(
         job.title,
@@ -370,32 +521,17 @@ const fetchAllJobs = async (filters) => {
       );
       const experienceLevelValue = classifyJobExperience(job);
 
+      // Apply all secondary filters
       if (
-        workplaceModel.length > 0 &&
-        !matchesFilter(workplaceModel, workplaceModelValue)
+        (workplaceModel.length && !matchesFilter(workplaceModel, workplaceModelValue)) ||
+        (workType.length && !matchesFilter(workType, workTypeValue)) ||
+        (contractType.length && !matchesFilter(contractType, contractTypeValue)) ||
+        (experienceLevel.length && !matchesFilter(experienceLevel, experienceLevelValue))
       ) {
         continue;
       }
 
-      if (workType.length > 0 && !matchesFilter(workType, workTypeValue)) {
-        continue;
-      }
-
-      if (
-        contractType.length > 0 &&
-        !matchesFilter(contractType, contractTypeValue)
-      ) {
-        continue;
-      }
-
-      if (
-        experienceLevel.length > 0 &&
-        !matchesFilter(experienceLevel, experienceLevelValue)
-      ) {
-        continue;
-      }
-
-      // If all filters passed, add to results
+      // Add valid job
       allJobs.push({
         title: job.title,
         company: companyName,
@@ -413,8 +549,217 @@ const fetchAllJobs = async (filters) => {
     }
   }
 
-  return allJobs;
+  return (allJobs);
 };
+
+
+// const fetchAllJobs = async (filters) => {
+//   const normalizedFilters = normalizeFilters(filters);
+//   console.log("Processing jobs with filters:", normalizedFilters);
+
+//   const {
+//     roles = [],
+//     locations = [],
+//     companies = [],
+//     workType = [],
+//     contractType = [],
+//     experienceLevel = [],
+//     workplaceModel = [],
+//   } = normalizedFilters;
+
+//   const apiPromises = [];
+
+//   // If any of company/role/location are missing, still proceed with defaults
+//   const targetCompanies = companies.length ? companies : [""];
+//   const targetRoles = roles.length ? roles : [""];
+//   const targetLocations = locations.length ? locations : [""];
+
+//   for (const company of targetCompanies) {
+//     for (const role of targetRoles) {
+//       for (const loc of targetLocations) {
+//         apiPromises.push(fetchJob(company, role, loc));
+//       }
+//     }
+//   }
+
+//   const jobArrays = await Promise.all(apiPromises);
+//   const allJobs = [];
+
+//   for (const jobs of jobArrays) {
+//     for (const job of jobs) {
+//       const companyName = job.company?.display_name || "";
+//       const workplaceModelValue = inferWorkplaceModel(job.title, job.description, job.location?.display_name);
+//       const workTypeValue = normalizeWorkType(job.contract_time || "");
+//       const contractTypeValue = normalizeContractType(job.contract_type || "", job.description);
+//       const experienceLevelValue = classifyJobExperience(job);
+
+//       if (
+//         (workplaceModel.length && !matchesFilter(workplaceModel, workplaceModelValue)) ||
+//         (workType.length && !matchesFilter(workType, workTypeValue)) ||
+//         (contractType.length && !matchesFilter(contractType, contractTypeValue)) ||
+//         (experienceLevel.length && !matchesFilter(experienceLevel, experienceLevelValue))
+//       ) {
+//         continue;
+//       }
+
+//       allJobs.push({
+//         title: job.title,
+//         company: companyName,
+//         location: job.location?.display_name,
+//         url: job.redirect_url,
+//         created: job.created,
+//         category: job.category?.label,
+//         description: job.description,
+//         salary_is_predicted: job.salary_is_predicted,
+//         Workplace_Model: workplaceModelValue,
+//         Work_Type: workTypeValue,
+//         Contract_Type: contractTypeValue,
+//         Experience_Level: experienceLevelValue,
+//       });
+//     }
+//   }
+
+//   const topJobsToEnrich = allJobs.slice(0, 1);
+//   const remainingJobs = allJobs.slice(1);
+
+//   const enrichedTopJobs = await Promise.all(
+//     topJobsToEnrich.map(async (job) => {
+//       try {
+//         const aiDetails = await getJobDetailsFromAI(job); 
+//         return { ...job, ...aiDetails };
+//       } catch (err) {
+//         console.warn("Enrichment failed, returning original job:", err.message);
+//         return job;
+//       }
+//     })
+//   );
+
+//   return [...enrichedTopJobs, ...remainingJobs];
+// };
+
+
+// const fetchAllJobs = async (filters) => {
+//   const normalizedFilters = normalizeFilters(filters);
+//   console.log("Processing jobs with filters:", normalizedFilters);
+
+//   const {
+//     roles,
+//     locations,
+//     companies,
+//     workType,
+//     contractType,
+//     experienceLevel,
+//     workplaceModel,
+//   } = normalizedFilters;
+
+//   const apiPromises = [];
+
+//   const effectiveCompanies = companies.length ? companies : [""];
+//   const effectiveRoles = roles.length ? roles : [""];
+//   const effectiveLocations = locations.length ? locations : [""];
+
+//   for (const company of effectiveCompanies) {
+//     for (const role of effectiveRoles) {
+//       for (const loc of effectiveLocations) {
+//         apiPromises.push(fetchJob(company, role, loc));
+//       }
+//     }
+//   }
+
+//   const jobArrays = await Promise.all(apiPromises);
+//   const flatJobs = jobArrays.flat();
+//   const enrichedJobs = [];
+
+//   for (const job of flatJobs) {
+//     const companyName = job.company?.display_name || "";
+//     const workplaceModelValue = inferWorkplaceModel(job.title, job.description, job.location?.display_name);
+//     const workTypeValue = normalizeWorkType(job.contract_time || "");
+//     const contractTypeValue = normalizeContractType(job.contract_type || "", job.description);
+//     const experienceLevelValue = classifyJobExperience(job);
+
+//     // Apply filters
+//     if (
+//       (workplaceModel.length && !matchesFilter(workplaceModel, workplaceModelValue)) ||
+//       (workType.length && !matchesFilter(workType, workTypeValue)) ||
+//       (contractType.length && !matchesFilter(contractType, contractTypeValue)) ||
+//       (experienceLevel.length && !matchesFilter(experienceLevel, experienceLevelValue))
+//     ) continue;
+
+//     const enriched = await getJobDetailsFromAI(job);
+//     enrichedJobs.push({
+//       title: job.title,
+//       company: companyName,
+//       location: job.location?.display_name,
+//       url: job.redirect_url,
+//       created: job.created,
+//       category: job.category?.label,
+//       description: job.description,
+//       salary_is_predicted: job.salary_is_predicted,
+//       Workplace_Model: workplaceModelValue,
+//       Work_Type: workTypeValue,
+//       Contract_Type: contractTypeValue,
+//       Experience_Level: experienceLevelValue,
+//       skills: enriched.skills,
+//       responsibilities: enriched.responsibilities,
+//     });
+//   }
+
+//   return enrichedJobs;
+// };
+
+
+
+// const getJobDetailsFromAI = async (jobObject, retries = 3) => {
+//       const prompt = `You are an expert technical recruiter specializing in software engineering roles. Analyze the provided job posting and extract specific technical skills and core responsibilities.
+
+// **Job Data:**
+// ${JSON.stringify(jobObject, null, 2)}
+
+// **CRITICAL INSTRUCTIONS:**
+
+// **For Skills - Extract ONLY specific technical skills like:**
+// - Programming languages, Frameworks, Databases, Cloud platforms, Tools & Technologies, Technical concepts
+// - NO soft skills or business domain knowledge
+// - Each skill must be 1-2 words maximum
+
+// **For Responsibilities - Extract core job duties:**
+// - Start each with action verbs (Design, Develop, Build, Implement, etc.)
+// - Focus on what the person will actually DO day-to-day
+// - 8-15 words per responsibility
+// - Avoid vague statements
+
+// - At max 8-10 skills and 5-8 responsibilities
+
+// **Output Format (JSON only):**
+// \`\`\`json
+// {
+//   "skills": ["skill-1", "skill-2", "skill-3", "skill-4", "skill-5"],
+//   "responsibilities": ["responsibility-1", "responsibility-2"]
+// }
+// \`\`\``;
+
+//   for (let attempt = 0; attempt <= retries; attempt++) {
+//     try {
+//       const result = await model.generateContent(prompt);
+//       const response = await result.response;
+//       const text = response.text();
+
+//       const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/) || [null, text];
+//       const jsonStr = jsonMatch[1] || text;
+//       return JSON.parse(jsonStr.trim());
+//     } catch (err) {
+//       const retryDelayMatch = err.message.match(/retryDelay":"(\d+)s/);
+//       const delaySec = retryDelayMatch ? parseInt(retryDelayMatch[1], 10) : 2;
+
+//       console.warn(`Gemini API 429 - waiting ${delaySec}s before retrying...`);
+//       await new Promise(res => setTimeout(res, delaySec * 1000));
+//     }
+//   }
+
+//   console.error("Failed to enrich after retries");
+//   return { skills: [], responsibilities: [] };
+// };
+
 
 const getFilteredJobs = async (req, res) => {
   try {
@@ -442,11 +787,12 @@ const getFilteredJobs = async (req, res) => {
       count: result.length,
       jobs: result,
     });
-  } catch (err) {
+  }
+   catch (err) {
     console.error("Error fetching filtered jobs:", err);
     return res.status(500).json({
       error: "Failed to fetch jobs.",
-      details: process.env.NODE_ENV === "development" ? err.message : undefined,
+      details:  err.message
     });
   }
 };
@@ -482,7 +828,7 @@ ${JSON.stringify(jobObject, null, 2)}
 }
 \`\`\``;
 
-    const result = await model.generateContent(prompt);
+    const result = await model1.generateContent(prompt);
     const response = await result.response;
     const analysis = response.text();
 
@@ -754,7 +1100,9 @@ const getMatchAnalyticsFromTemp = async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const resumeContent = await sendBufferToAffinda( resumeFile.buffer, resumeFile.originalname, resumeFile.mimetype);
+    // const resumeContent = await sendBufferToAffinda( resumeFile.buffer, resumeFile.originalname, resumeFile.mimetype);
+      const resumeContent = await pdfParse(resumeFile.buffer);
+    
 
     if (resumeContent.status === "rejected") {
       return res.status(500).json({
@@ -783,7 +1131,7 @@ const getMatchAnalyticsFromTemp = async (req, res) => {
 };
 
 // Cache cleanup job
-cron.schedule("0 3 * * *", () => {
+cron.schedule("09 00 * * *", () => {
   cache.clear();
   console.log("Cache cleared at 3:00 AM");
 });

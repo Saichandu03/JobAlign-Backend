@@ -28,11 +28,13 @@ mongoose.connect(process.env.MONGO_URI, {
 var userRouter = require("./src/routes/userRouter");
 var jobsRouter = require("./src/routes/jobsRouter");
 var resumeRouter = require("./src/routes/resumeRouter");
+var dreamRoleRouter = require('./src/routes/dreamRoleRouter')
 
 
 app.use('/api', userRouter);
 app.use('/api', jobsRouter);
 app.use('/api', resumeRouter);
+app.use('/api', dreamRoleRouter);
 
 // Sample route
 app.get('/', (req, res) => {
@@ -42,7 +44,6 @@ app.get('/', (req, res) => {
 
 cron.schedule('*/14 * * * *', async () => {
   try {
-    console.log("hello....");
     const response = await axios.get('https://jobalign-backend.onrender.com/api/dummyCall');
     console.log('Dummy API called at', new Date().toLocaleString());
   } catch (error) {

@@ -6,30 +6,43 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
-  
   email: {
     type: String,
     required: true,
     unique: true,
   },
-
   password: {
     type: String
+  },
+  role: {
+    type: String
+  },
+  location:{
+    type : String,
+  },
+  phone:{
+    type : Number,
+  },
+  experienceLevel:{
+    type : String,
+    default : "fresher"
+  },
+  resumeUrl :{
+    type : String
   },
   dailyCounter: {
     type: Number,
     default: 3
   },
-
-  createdAt: {
-    type: Date,
-    default: Date.now,
+  preferedRoles: {
+    type : Array,
+    default: []
   },
-
-  updatedAt: {
-    type: Date,
-    default: Date.now,
+  preferedLocations: {
+    type : Array,
+    default: []
   },
+  
 });
 
 module.exports = mongoose.model("User", userSchema);
