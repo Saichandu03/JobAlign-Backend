@@ -121,11 +121,16 @@ async function saveResumeContent(userId, fileName, data, resumeUrl) {
 // Main controller function
 const addResume = async (req, res) => {
   try {
+
+    console.log(req.body);
     const userId = req.body.userId;
     const file = req.file;
 
-    if (!userId || !file) {
-      return res.status(400).json({ error: "Missing userId or resume file" });
+    if (!userId) {
+      return res.status(400).json({ error: "Missing userId" });
+    }
+    if (!file) {
+      return res.status(400).json({ error: "Missing resume file" });
     }
 
     // Parallel Cloudinary + Affinda
