@@ -474,7 +474,7 @@ const updateContactDetails = async (req, res) => {
     }
 
     const trimmedLocation = location && location.trim();
-    const trimmedphone = phone && phone.trim();
+    const trimmedphone = phone && phone;
 
     const updateData = {
       email: trimmedEmail,
