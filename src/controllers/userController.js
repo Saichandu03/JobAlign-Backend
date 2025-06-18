@@ -568,6 +568,37 @@ const getUserData = async (req, res) => {
   }
 };
 
+const getUserFilters = async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json("User ID is required");
+    }
+
+    const userFilters = await userSchema.findById(userId).select('preferedLocations preferedRoles').lean(); 
+    console.log(userFilters);
+
+    if (!userFilters) {
+      return res.status(404).json("User not found");
+    }
+
+    return res.status(200).json({
+      message: "User filters retrieved successfully",
+      data: {
+        userId,
+        preferredLocations: userFilters.preferedLocations || [],
+        preferredRoles: userFilters.preferedRoles || []
+      }
+    });
+
+  } catch (error) {
+    console.error("Error in getUserFilters:", error.message);
+
+    return res.status(500).json("Internal server error");
+  }
+};
+
 
 // Get all users
 const getAllUsers = async (req, res) => {
@@ -601,4 +632,5 @@ module.exports = {
   updatePreferedLocations,
   updateContactDetails,
   getUserData,
+  getUserFilters,
 };

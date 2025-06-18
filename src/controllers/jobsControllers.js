@@ -539,9 +539,9 @@ const fetchJob = async (company, role, location, retries = 3, delay = 50) => {
 
 //         if (data.length > 0) {
 //           return {companyUrl : data[0].domain, logoUrl : data[0].logo || `https://logo.clearbit.com/${data[0].domain}`};
-//         } 
+//         }
 //         else {
-//           return null; 
+//           return null;
 //         }
 //       }
 
@@ -785,7 +785,6 @@ const fetchJob = async (company, role, location, retries = 3, delay = 50) => {
 //   return { skills: [], responsibilities: [] };
 // };
 
-
 // Company logo service without caching (for Express backend)
 class CompanyLogoService {
   constructor() {
@@ -796,9 +795,9 @@ class CompanyLogoService {
 
   async getCompanyLogo(companyName) {
     if (!companyName) return { logoUrl: null, companyUrl: null };
-    
+
     const normalizedName = companyName.toLowerCase().trim();
-    
+
     // Return pending request if already in progress (avoid duplicate API calls in same batch)
     if (this.pendingRequests.has(normalizedName)) {
       return this.pendingRequests.get(normalizedName);
@@ -824,7 +823,7 @@ class CompanyLogoService {
     const now = Date.now();
     const timeSinceLastRequest = now - this.lastRequestTime;
     if (timeSinceLastRequest < this.rateLimitDelay) {
-      await new Promise(resolve => 
+      await new Promise((resolve) =>
         setTimeout(resolve, this.rateLimitDelay - timeSinceLastRequest)
       );
     }
@@ -835,12 +834,14 @@ class CompanyLogoService {
 
     try {
       const response = await fetch(
-        `https://autocomplete.clearbit.com/v1/companies/suggest?query=${encodeURIComponent(companyName)}`,
-        { 
+        `https://autocomplete.clearbit.com/v1/companies/suggest?query=${encodeURIComponent(
+          companyName
+        )}`,
+        {
           signal: controller.signal,
           headers: {
-            'Accept': 'application/json',
-          }
+            Accept: "application/json",
+          },
         }
       );
 
@@ -849,15 +850,16 @@ class CompanyLogoService {
       }
 
       const data = await response.json();
-      
+
       if (data && data.length > 0) {
         const company = data[0];
         return {
-          logoUrl: company.logo || `https://logo.clearbit.com/${company.domain}`,
-          companyUrl: company.domain
+          logoUrl:
+            company.logo || `https://logo.clearbit.com/${company.domain}`,
+          companyUrl: company.domain,
         };
       }
-      
+
       return { logoUrl: null, companyUrl: null };
     } finally {
       clearTimeout(timeoutId);
@@ -866,7 +868,7 @@ class CompanyLogoService {
 
   async batchFetchLogos(companyNames, concurrencyLimit = 8) {
     const uniqueNames = [...new Set(companyNames.filter(Boolean))];
-    
+
     if (uniqueNames.length === 0) {
       return new Map();
     }
@@ -877,26 +879,26 @@ class CompanyLogoService {
     }
 
     const results = new Map();
-    
+
     for (const batch of batches) {
       const batchPromises = batch.map(async (name) => {
         const result = await this.getCompanyLogo(name);
         return [name.toLowerCase().trim(), result];
       });
-      
+
       const batchResults = await Promise.all(batchPromises);
       batchResults.forEach(([name, result]) => {
         results.set(name, result);
       });
     }
-    
+
     return results;
   }
 }
 
 const fetchAllJobs = async (filters) => {
   const startTime = Date.now();
-  
+
   try {
     const normalizedFilters = normalizeFilters(filters);
     console.log("Processing jobs with filters:", normalizedFilters);
@@ -921,9 +923,12 @@ const fetchAllJobs = async (filters) => {
     for (const company of safeCompanies) {
       for (const role of safeRoles) {
         for (const location of safeLocations) {
-          jobFetchPromises.push(
-            () => fetchJob(company, role, location).catch(error => {
-              console.warn(`Failed to fetch jobs for ${company}/${role}/${location}:`, error.message);
+          jobFetchPromises.push(() =>
+            fetchJob(company, role, location).catch((error) => {
+              console.warn(
+                `Failed to fetch jobs for ${company}/${role}/${location}:`,
+                error.message
+              );
               return [];
             })
           );
@@ -932,9 +937,9 @@ const fetchAllJobs = async (filters) => {
     }
 
     console.log(`Executing ${jobFetchPromises.length} job fetch requests...`);
-    
+
     const jobArrays = await executeWithConcurrencyLimit(
-      jobFetchPromises, 
+      jobFetchPromises,
       MAX_CONCURRENT_REQUESTS
     );
 
@@ -945,10 +950,10 @@ const fetchAllJobs = async (filters) => {
       if (!Array.isArray(jobs)) continue;
 
       for (const job of jobs) {
-        if (!job || typeof job !== 'object') continue;
+        if (!job || typeof job !== "object") continue;
 
         const companyName = job.company?.display_name || "";
-        
+
         const workplaceModelValue = inferWorkplaceModel(
           job.title,
           job.description,
@@ -962,10 +967,13 @@ const fetchAllJobs = async (filters) => {
         const experienceLevelValue = classifyJobExperience(job);
 
         if (
-          (workplaceModel.length && !matchesFilter(workplaceModel, workplaceModelValue)) ||
+          (workplaceModel.length &&
+            !matchesFilter(workplaceModel, workplaceModelValue)) ||
           (workType.length && !matchesFilter(workType, workTypeValue)) ||
-          (contractType.length && !matchesFilter(contractType, contractTypeValue)) ||
-          (experienceLevel.length && !matchesFilter(experienceLevel, experienceLevelValue))
+          (contractType.length &&
+            !matchesFilter(contractType, contractTypeValue)) ||
+          (experienceLevel.length &&
+            !matchesFilter(experienceLevel, experienceLevelValue))
         ) {
           continue;
         }
@@ -985,46 +993,53 @@ const fetchAllJobs = async (filters) => {
       }
     }
 
-    console.log(`Found ${validJobs.length} valid jobs from ${companyNames.size} unique companies`);
+    console.log(
+      `Found ${validJobs.length} valid jobs from ${companyNames.size} unique companies`
+    );
 
     const logoService = new CompanyLogoService();
     const logoResults = await logoService.batchFetchLogos([...companyNames]);
 
-    const allJobs = validJobs.map(({
-      job,
-      companyName,
-      workplaceModelValue,
-      workTypeValue,
-      contractTypeValue,
-      experienceLevelValue,
-    }) => {
-      const logoData = logoResults.get(companyName.toLowerCase().trim()) || {
-        logoUrl: null,
-        companyUrl: null
-      };
+    const allJobs = validJobs.map(
+      ({
+        job,
+        companyName,
+        workplaceModelValue,
+        workTypeValue,
+        contractTypeValue,
+        experienceLevelValue,
+      }) => {
+        const logoData = logoResults.get(companyName.toLowerCase().trim()) || {
+          logoUrl: null,
+          companyUrl: null,
+        };
 
-      return {
-        title: job.title,
-        company: companyName,
-        location: job.location?.display_name || null,
-        url: job.redirect_url,
-        logoUrl: logoData.logoUrl,
-        companyUrl: logoData.companyUrl,
-        created: job.created,
-        category: job.category?.label || null,
-        description: job.description,
-        Workplace_Model: workplaceModelValue,
-        Work_Type: workTypeValue,
-        Contract_Type: contractTypeValue,
-        Experience_Level: experienceLevelValue,
-      };
-    });
+        return {
+          title: job.title,
+          company: companyName,
+          location: job.location?.display_name || null,
+          url: job.redirect_url,
+          logoUrl: logoData.logoUrl,
+          companyUrl: logoData.companyUrl,
+          created: job.created,
+          category: job.category?.label || null,
+          description: job.description,
+          Workplace_Model: workplaceModelValue,
+          Work_Type: workTypeValue,
+          Contract_Type: contractTypeValue,
+          Experience_Level: experienceLevelValue,
+        };
+      }
+    );
 
     const endTime = Date.now();
-    console.log(`Successfully processed ${allJobs.length} jobs in ${endTime - startTime}ms`);
-    
-    return allJobs;
+    console.log(
+      `Successfully processed ${allJobs.length} jobs in ${
+        endTime - startTime
+      }ms`
+    );
 
+    return allJobs;
   } catch (error) {
     console.error("Error in fetchAllJobs:", error);
     throw new Error(`Failed to fetch jobs: ${error.message}`);
@@ -1034,21 +1049,21 @@ const fetchAllJobs = async (filters) => {
 async function executeWithConcurrencyLimit(promiseFunctions, limit) {
   const results = [];
   const executing = [];
-  
+
   for (const promiseFunction of promiseFunctions) {
-    const promise = promiseFunction().then(result => {
+    const promise = promiseFunction().then((result) => {
       executing.splice(executing.indexOf(promise), 1);
       return result;
     });
-    
+
     results.push(promise);
     executing.push(promise);
-    
+
     if (executing.length >= limit) {
       await Promise.race(executing);
     }
   }
-  
+
   return Promise.all(results);
 }
 
@@ -1197,18 +1212,8 @@ const matchResume = async (jobObject, resumeContent) => {
 
     // `;
 
-    const prompt = `You are an expert career compatibility analyst. Your task is to compare a candidate's resume with a given job description and generate a precise JSON compatibility analysis.
+    const prompt = `You are an expert career compatibility analyst. Your task is to compare a candidate's resume with a given job description and return ONLY a JSON object with the following structure:
 
-**Input:**
-- jobObject: ${JSON.stringify(jobObject)}
-- resumeContent: ${resumeContent}
-
-**Task:**
-1. Analyze the technical skills, methodologies, tools, and requirements mentioned or implied in the jobObject.
-2. Compare them with the explicitly stated skills, experiences, and certifications in the resumeContent.
-3. Generate a JSON object strictly following the structure below.
-
-**Output Format (Strictly):**
 {
   "matchPercentage": number,
   "matchedSkills": [string],
@@ -1216,30 +1221,21 @@ const matchResume = async (jobObject, resumeContent) => {
   "improvementSuggestions": [string]
 }
 
-**Output Constraints:**
-1. **matchPercentage**: 
-   - Based on how well the resume matches the core technical requirements of the job.
-2. **matchedSkills**:
-   - At most 10 strings.
-   - Each must be 1–2 words only (e.g., “Java”, “React.js”).
-   - Include only the *most important* relevant technical skills from the resume matching the job.
-3. **unmatchedSkills**:
-   - At most 6 strings.
-   - Each must be 1–2 words only.
-   - List only the *most critical* technical skills or key requirements from the job not clearly demonstrated in the resume.
-4. **improvementSuggestions**:
-   - Between 4–6 suggestions.
-   - Each suggestion must be concise and under 10 words.
-   - Prioritize the top improvements directly related to closing the skill gaps for this role.
+**Input:**
+- jobObject: ${JSON.stringify(jobObject)}
+- resumeContent: ${resumeContent}
 
-**Accuracy Requirements:**
-- Focus solely on technical skills and key methodology/operational requirements.
-- Do NOT infer soft skills or generic experience unless explicitly asked.
-- Ensure strict compliance with formatting rules.
-- Provide the most accurate result possible based on the inputs.
+**Instructions:**
+1. Analyze the technical skills, tools, and requirements from the job description.
+2. Compare them to the explicit skills and experience in the resume.
+3. Return ONLY the JSON result—no explanation, markdown, or additional text.
+4. Format strictly as per the schema:
+   - matchPercentage: Number between 0-100.
+   - matchedSkills: At most 10 strings, each 1-2 words.
+   - unmatchedSkills: At most 6 strings, each 1-2 words.
+   - improvementSuggestions: 4-6 concise suggestions under 10 words.
 
-**Final Output:**
-Return ONLY the JSON object without any additional text, explanation, or markdown.`;
+**Important:** Do NOT include any extra content such as reasoning, comments, markdown, or formatting. Output only the JSON object.`;
 
     // const result = await model.generateContent(prompt);
     // const response = await result.response;
@@ -1252,84 +1248,97 @@ Return ONLY the JSON object without any additional text, explanation, or markdow
           content: prompt,
         },
       ],
-      model: "Qwen/Qwen3-235B-A22B-fp8-tput",
+      model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
     });
 
     const analysis = response.choices[0].message.content;
-    // console.log("This is Result : " , analysis);
-
+    // console.log("This is Result : ", analysis);
     // console.log(prompt);
 
     // console.log("AI Analysis Raw Data:", analysis);
 
-    let parsedAnalysis;
+    // let parsedAnalysis;
+    // try {
+    //   // Try multiple JSON extraction methods
+    //   let jsonStr = analysis;
+
+    //   // Method 1: Extract from code blocks
+    //   const jsonMatch = analysis.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    //   if (jsonMatch) {
+    //     jsonStr = jsonMatch[1];
+    //   }
+
+    //   // Method 2: Find JSON object pattern
+    //   const jsonObjectMatch = analysis.match(/\{[\s\S]*\}/);
+    //   if (!jsonMatch && jsonObjectMatch) {
+    //     jsonStr = jsonObjectMatch[0];
+    //   }
+
+    //   parsedAnalysis = JSON.parse(jsonStr.trim());
+    // }
+    //  catch (parseError) {
+    //   console.error("JSON parsing error:", parseError);
+    //   console.error("Raw analysis:", analysis);
+
+    //   // Return a default structure instead of empty string
+    //   return {
+    //     matchPercentage: 0,
+    //     matchedSkills: [],
+    //     unmatchedSkills: [],
+    //     improvementSuggestions: [
+    //       "Unable to analyze resume at this time. Please try again.",
+    //     ],
+    //     error: "JSON parsing failed",
+    //   };
+    // }
+
+    // // Validate response structure with more comprehensive checks
+    // if (
+    //   typeof parsedAnalysis !== "object" ||
+    //   parsedAnalysis === null ||
+    //   typeof parsedAnalysis.matchPercentage !== "number" ||
+    //   !Array.isArray(parsedAnalysis.matchedSkills) ||
+    //   !Array.isArray(parsedAnalysis.unmatchedSkills) ||
+    //   !Array.isArray(parsedAnalysis.improvementSuggestions)
+    // ) {
+    //   console.log("Invalid Response Structure:", parsedAnalysis);
+
+    //   // Return a default structure instead of empty string
+    //   return {
+    //     matchPercentage: 0,
+    //     matchedSkills: [],
+    //     unmatchedSkills: [],
+    //     improvementSuggestions: [
+    //       "Invalid analysis response. Please try again.",
+    //     ],
+    //     error: "Invalid response structure",
+    //   };
+    // }
+
+    // // Ensure percentage is within valid range
+    // parsedAnalysis.matchPercentage = Math.max(
+    //   0,
+    //   Math.min(100, parsedAnalysis.matchPercentage)
+    // );
+
     try {
-      // Try multiple JSON extraction methods
-      let jsonStr = analysis;
-
-      // Method 1: Extract from code blocks
-      const jsonMatch = analysis.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        jsonStr = jsonMatch[1];
-      }
-
-      // Method 2: Find JSON object pattern
-      const jsonObjectMatch = analysis.match(/\{[\s\S]*\}/);
-      if (!jsonMatch && jsonObjectMatch) {
-        jsonStr = jsonObjectMatch[0];
-      }
-
-      parsedAnalysis = JSON.parse(jsonStr.trim());
-    } catch (parseError) {
-      console.error("JSON parsing error:", parseError);
-      console.error("Raw analysis:", analysis);
-
-      // Return a default structure instead of empty string
+      const rr = JSON.parse(analysis.trim());
+      console.log(rr);
+      return rr
+      
+    } catch (error) {
+      console.error("JSON parsing error:", error);
+      console.error("Raw analysis:", jsonStr);
       return {
         matchPercentage: 0,
         matchedSkills: [],
         unmatchedSkills: [],
-        improvementSuggestions: [
-          "Unable to analyze resume at this time. Please try again.",
-        ],
+        improvementSuggestions: ["JSON parsing failed. Please try again."],
         error: "JSON parsing failed",
       };
     }
-
-    // Validate response structure with more comprehensive checks
-    if (
-      typeof parsedAnalysis !== "object" ||
-      parsedAnalysis === null ||
-      typeof parsedAnalysis.matchPercentage !== "number" ||
-      !Array.isArray(parsedAnalysis.matchedSkills) ||
-      !Array.isArray(parsedAnalysis.unmatchedSkills) ||
-      !Array.isArray(parsedAnalysis.improvementSuggestions)
-    ) {
-      console.log("Invalid Response Structure:", parsedAnalysis);
-
-      // Return a default structure instead of empty string
-      return {
-        matchPercentage: 0,
-        matchedSkills: [],
-        unmatchedSkills: [],
-        improvementSuggestions: [
-          "Invalid analysis response. Please try again.",
-        ],
-        error: "Invalid response structure",
-      };
-    }
-
-    // Ensure percentage is within valid range
-    parsedAnalysis.matchPercentage = Math.max(
-      0,
-      Math.min(100, parsedAnalysis.matchPercentage)
-    );
-
-    return parsedAnalysis;
   } catch (error) {
     console.error("Error in matchResume function:", error);
-
-    // Return a default structure instead of empty string
     return {
       matchPercentage: 0,
       matchedSkills: [],
