@@ -1,6 +1,6 @@
 const axios = require("axios");
 const cron = require("node-cron");
-const { LRUCache } = require('lru-cache');
+const { LRUCache } = require("lru-cache");
 const pdfParse = require("pdf-parse");
 const userSchema = require("../models/userSchema");
 const resumeSchema = require("../models/resumeSchema");
@@ -420,8 +420,6 @@ const fetchJob = async (company, role, location, retries = 3, delay = 50) => {
 //   return allJobs;
 // };
 
-
-
 // const fetchJob = async (company, role, location, retries = 3, delay = 50) => {
 //   const key = `${role || ''}|${location || ''}|${company || ''}`;
 
@@ -454,7 +452,7 @@ const fetchJob = async (company, role, location, retries = 3, delay = 50) => {
 //         const jobs = res.data?.results || [];
 //         cache.set(key, jobs);
 //         return jobs;
-//       } 
+//       }
 //       catch (err) {
 //         if (err.response?.status === 429) {
 //           const waitTime = delay * Math.pow(2, attempt);
@@ -472,86 +470,116 @@ const fetchJob = async (company, role, location, retries = 3, delay = 50) => {
 //   });
 // };
 
+// const fetchAllJobs = async (filters) => {
+//   const normalizedFilters = normalizeFilters(filters);
+//   console.log("Processing jobs with filters:", normalizedFilters);
 
-const fetchAllJobs = async (filters) => {
-  const normalizedFilters = normalizeFilters(filters);
-  console.log("Processing jobs with filters:", normalizedFilters);
+//   const {
+//     roles,
+//     locations,
+//     companies,
+//     workType,
+//     contractType,
+//     experienceLevel,
+//     workplaceModel,
+//   } = normalizedFilters;
 
-  const {
-    roles,
-    locations,
-    companies,
-    workType,
-    contractType,
-    experienceLevel,
-    workplaceModel,
-  } = normalizedFilters;
+//   // Graceful fallback: use empty string to allow broad queries
+//   const safeRoles = roles.length ? roles : [""];
+//   const safeLocations = locations.length ? locations : [""];
+//   const safeCompanies = companies.length ? companies : [""];
 
-  // Graceful fallback: use empty string to allow broad queries
-  const safeRoles = roles.length ? roles : [''];
-  const safeLocations = locations.length ? locations : [''];
-  const safeCompanies = companies.length ? companies : [''];
+//   const apiPromises = [];
 
-  const apiPromises = [];
+//   for (const company of safeCompanies) {
+//     for (const role of safeRoles) {
+//       for (const location of safeLocations) {
+//         apiPromises.push(fetchJob(company, role, location));
+//       }
+//     }
+//   }
 
-  for (const company of safeCompanies) {
-    for (const role of safeRoles) {
-      for (const location of safeLocations) {
-        apiPromises.push(fetchJob(company, role, location));
-      }
-    }
-  }
+//   // Wait for all API responses
+//   const jobArrays = await Promise.all(apiPromises);
+//   const allJobs = [];
 
-  // Wait for all API responses
-  const jobArrays = await Promise.all(apiPromises);
-  const allJobs = [];
+//   for (const jobs of jobArrays) {
+//     for (const job of jobs) {
+//       const companyName = job.company?.display_name || "";
+//       const workplaceModelValue = inferWorkplaceModel(
+//         job.title,
+//         job.description,
+//         job.location?.display_name
+//       );
+//       const workTypeValue = normalizeWorkType(job.contract_time || "");
+//       const contractTypeValue = normalizeContractType(
+//         job.contract_type || "",
+//         job.description
+//       );
+//       const experienceLevelValue = classifyJobExperience(job);
 
-  for (const jobs of jobArrays) {
-    for (const job of jobs) {
-      const companyName = job.company?.display_name || "";
-      const workplaceModelValue = inferWorkplaceModel(
-        job.title,
-        job.description,
-        job.location?.display_name
-      );
-      const workTypeValue = normalizeWorkType(job.contract_time || "");
-      const contractTypeValue = normalizeContractType(
-        job.contract_type || "",
-        job.description
-      );
-      const experienceLevelValue = classifyJobExperience(job);
+//       // Apply all secondary filters
+//       if (
+//         (workplaceModel.length &&
+//           !matchesFilter(workplaceModel, workplaceModelValue)) ||
+//         (workType.length && !matchesFilter(workType, workTypeValue)) ||
+//         (contractType.length &&
+//           !matchesFilter(contractType, contractTypeValue)) ||
+//         (experienceLevel.length &&
+//           !matchesFilter(experienceLevel, experienceLevelValue))
+//       ) {
+//         continue;
+//       }
 
-      // Apply all secondary filters
-      if (
-        (workplaceModel.length && !matchesFilter(workplaceModel, workplaceModelValue)) ||
-        (workType.length && !matchesFilter(workType, workTypeValue)) ||
-        (contractType.length && !matchesFilter(contractType, contractTypeValue)) ||
-        (experienceLevel.length && !matchesFilter(experienceLevel, experienceLevelValue))
-      ) {
-        continue;
-      }
+//       async function getCompanyLogo(companyName) {
+//         const response = await fetch(
+//           `https://autocomplete.clearbit.com/v1/companies/suggest?query=${companyName}`
+//         );
+//         const data = await response.json();
 
-      // Add valid job
-      allJobs.push({
-        title: job.title,
-        company: companyName,
-        location: job.location?.display_name,
-        url: job.redirect_url,
-        created: job.created,
-        category: job.category?.label,
-        description: job.description,
-        salary_is_predicted: job.salary_is_predicted,
-        Workplace_Model: workplaceModelValue,
-        Work_Type: workTypeValue,
-        Contract_Type: contractTypeValue,
-        Experience_Level: experienceLevelValue,
-      });
-    }
-  }
+//         if (data.length > 0) {
+//           return {companyUrl : data[0].domain, logoUrl : data[0].logo || `https://logo.clearbit.com/${data[0].domain}`};
+//         } 
+//         else {
+//           return null; 
+//         }
+//       }
 
-  return (allJobs);
-};
+//       var logoUrl = null
+//       var companyUrl = null
+//       await getCompanyLogo(companyName).then((companyUrl, logoUrl) => {
+//         if (logoUrl) {
+//           console.log("logoUrl", logoUrl);
+//           logoUrl = logo
+//         }
+//         if(companyUrl){
+//           console.log("companyUrl", companyUrl);
 
+//           companyUrl = companyUrl
+//         }
+//       });
+
+//       // Add valid job
+//       allJobs.push({
+//         title: job.title,
+//         company: companyName,
+//         location: job.location?.display_name,
+//         url: job.redirect_url,
+//         logoUrl: logoUrl,
+//         companyUrl: companyUrl,
+//         created: job.created,
+//         category: job.category?.label,
+//         description: job.description,
+//         Workplace_Model: workplaceModelValue,
+//         Work_Type: workTypeValue,
+//         Contract_Type: contractTypeValue,
+//         Experience_Level: experienceLevelValue,
+//       });
+//     }
+//   }
+
+//   return allJobs;
+// };
 
 // const fetchAllJobs = async (filters) => {
 //   const normalizedFilters = normalizeFilters(filters);
@@ -625,7 +653,7 @@ const fetchAllJobs = async (filters) => {
 //   const enrichedTopJobs = await Promise.all(
 //     topJobsToEnrich.map(async (job) => {
 //       try {
-//         const aiDetails = await getJobDetailsFromAI(job); 
+//         const aiDetails = await getJobDetailsFromAI(job);
 //         return { ...job, ...aiDetails };
 //       } catch (err) {
 //         console.warn("Enrichment failed, returning original job:", err.message);
@@ -636,7 +664,6 @@ const fetchAllJobs = async (filters) => {
 
 //   return [...enrichedTopJobs, ...remainingJobs];
 // };
-
 
 // const fetchAllJobs = async (filters) => {
 //   const normalizedFilters = normalizeFilters(filters);
@@ -707,8 +734,6 @@ const fetchAllJobs = async (filters) => {
 //   return enrichedJobs;
 // };
 
-
-
 // const getJobDetailsFromAI = async (jobObject, retries = 3) => {
 //       const prompt = `You are an expert technical recruiter specializing in software engineering roles. Analyze the provided job posting and extract specific technical skills and core responsibilities.
 
@@ -761,6 +786,272 @@ const fetchAllJobs = async (filters) => {
 // };
 
 
+// Company logo service without caching (for Express backend)
+class CompanyLogoService {
+  constructor() {
+    this.rateLimitDelay = 50; // 50ms between requests to avoid rate limiting
+    this.lastRequestTime = 0;
+    this.pendingRequests = new Map(); // Only track pending requests to avoid duplicates
+  }
+
+  async getCompanyLogo(companyName) {
+    if (!companyName) return { logoUrl: null, companyUrl: null };
+    
+    const normalizedName = companyName.toLowerCase().trim();
+    
+    // Return pending request if already in progress (avoid duplicate API calls in same batch)
+    if (this.pendingRequests.has(normalizedName)) {
+      return this.pendingRequests.get(normalizedName);
+    }
+
+    // Create new request with rate limiting
+    const request = this.fetchWithRateLimit(normalizedName);
+    this.pendingRequests.set(normalizedName, request);
+
+    try {
+      const result = await request;
+      return result;
+    } catch (error) {
+      console.warn(`Failed to fetch logo for ${companyName}:`, error.message);
+      return { logoUrl: null, companyUrl: null };
+    } finally {
+      this.pendingRequests.delete(normalizedName);
+    }
+  }
+
+  async fetchWithRateLimit(companyName) {
+    // Implement simple rate limiting
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    if (timeSinceLastRequest < this.rateLimitDelay) {
+      await new Promise(resolve => 
+        setTimeout(resolve, this.rateLimitDelay - timeSinceLastRequest)
+      );
+    }
+    this.lastRequestTime = Date.now();
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+    try {
+      const response = await fetch(
+        `https://autocomplete.clearbit.com/v1/companies/suggest?query=${encodeURIComponent(companyName)}`,
+        { 
+          signal: controller.signal,
+          headers: {
+            'Accept': 'application/json',
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        const company = data[0];
+        return {
+          logoUrl: company.logo || `https://logo.clearbit.com/${company.domain}`,
+          companyUrl: company.domain
+        };
+      }
+      
+      return { logoUrl: null, companyUrl: null };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  async batchFetchLogos(companyNames, concurrencyLimit = 8) {
+    const uniqueNames = [...new Set(companyNames.filter(Boolean))];
+    
+    if (uniqueNames.length === 0) {
+      return new Map();
+    }
+
+    const batches = [];
+    for (let i = 0; i < uniqueNames.length; i += concurrencyLimit) {
+      batches.push(uniqueNames.slice(i, i + concurrencyLimit));
+    }
+
+    const results = new Map();
+    
+    for (const batch of batches) {
+      const batchPromises = batch.map(async (name) => {
+        const result = await this.getCompanyLogo(name);
+        return [name.toLowerCase().trim(), result];
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      batchResults.forEach(([name, result]) => {
+        results.set(name, result);
+      });
+    }
+    
+    return results;
+  }
+}
+
+const fetchAllJobs = async (filters) => {
+  const startTime = Date.now();
+  
+  try {
+    const normalizedFilters = normalizeFilters(filters);
+    console.log("Processing jobs with filters:", normalizedFilters);
+
+    const {
+      roles,
+      locations,
+      companies,
+      workType,
+      contractType,
+      experienceLevel,
+      workplaceModel,
+    } = normalizedFilters;
+
+    const safeRoles = roles.length ? roles : [""];
+    const safeLocations = locations.length ? locations : [""];
+    const safeCompanies = companies.length ? companies : [""];
+
+    const MAX_CONCURRENT_REQUESTS = 12;
+    const jobFetchPromises = [];
+
+    for (const company of safeCompanies) {
+      for (const role of safeRoles) {
+        for (const location of safeLocations) {
+          jobFetchPromises.push(
+            () => fetchJob(company, role, location).catch(error => {
+              console.warn(`Failed to fetch jobs for ${company}/${role}/${location}:`, error.message);
+              return [];
+            })
+          );
+        }
+      }
+    }
+
+    console.log(`Executing ${jobFetchPromises.length} job fetch requests...`);
+    
+    const jobArrays = await executeWithConcurrencyLimit(
+      jobFetchPromises, 
+      MAX_CONCURRENT_REQUESTS
+    );
+
+    const validJobs = [];
+    const companyNames = new Set();
+
+    for (const jobs of jobArrays) {
+      if (!Array.isArray(jobs)) continue;
+
+      for (const job of jobs) {
+        if (!job || typeof job !== 'object') continue;
+
+        const companyName = job.company?.display_name || "";
+        
+        const workplaceModelValue = inferWorkplaceModel(
+          job.title,
+          job.description,
+          job.location?.display_name
+        );
+        const workTypeValue = normalizeWorkType(job.contract_time || "");
+        const contractTypeValue = normalizeContractType(
+          job.contract_type || "",
+          job.description
+        );
+        const experienceLevelValue = classifyJobExperience(job);
+
+        if (
+          (workplaceModel.length && !matchesFilter(workplaceModel, workplaceModelValue)) ||
+          (workType.length && !matchesFilter(workType, workTypeValue)) ||
+          (contractType.length && !matchesFilter(contractType, contractTypeValue)) ||
+          (experienceLevel.length && !matchesFilter(experienceLevel, experienceLevelValue))
+        ) {
+          continue;
+        }
+
+        validJobs.push({
+          job,
+          companyName,
+          workplaceModelValue,
+          workTypeValue,
+          contractTypeValue,
+          experienceLevelValue,
+        });
+
+        if (companyName) {
+          companyNames.add(companyName);
+        }
+      }
+    }
+
+    console.log(`Found ${validJobs.length} valid jobs from ${companyNames.size} unique companies`);
+
+    const logoService = new CompanyLogoService();
+    const logoResults = await logoService.batchFetchLogos([...companyNames]);
+
+    const allJobs = validJobs.map(({
+      job,
+      companyName,
+      workplaceModelValue,
+      workTypeValue,
+      contractTypeValue,
+      experienceLevelValue,
+    }) => {
+      const logoData = logoResults.get(companyName.toLowerCase().trim()) || {
+        logoUrl: null,
+        companyUrl: null
+      };
+
+      return {
+        title: job.title,
+        company: companyName,
+        location: job.location?.display_name || null,
+        url: job.redirect_url,
+        logoUrl: logoData.logoUrl,
+        companyUrl: logoData.companyUrl,
+        created: job.created,
+        category: job.category?.label || null,
+        description: job.description,
+        Workplace_Model: workplaceModelValue,
+        Work_Type: workTypeValue,
+        Contract_Type: contractTypeValue,
+        Experience_Level: experienceLevelValue,
+      };
+    });
+
+    const endTime = Date.now();
+    console.log(`Successfully processed ${allJobs.length} jobs in ${endTime - startTime}ms`);
+    
+    return allJobs;
+
+  } catch (error) {
+    console.error("Error in fetchAllJobs:", error);
+    throw new Error(`Failed to fetch jobs: ${error.message}`);
+  }
+};
+
+async function executeWithConcurrencyLimit(promiseFunctions, limit) {
+  const results = [];
+  const executing = [];
+  
+  for (const promiseFunction of promiseFunctions) {
+    const promise = promiseFunction().then(result => {
+      executing.splice(executing.indexOf(promise), 1);
+      return result;
+    });
+    
+    results.push(promise);
+    executing.push(promise);
+    
+    if (executing.length >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  
+  return Promise.all(results);
+}
+
 const getFilteredJobs = async (req, res) => {
   try {
     let { userId, filters } = req.body;
@@ -787,12 +1078,11 @@ const getFilteredJobs = async (req, res) => {
       count: result.length,
       jobs: result,
     });
-  }
-   catch (err) {
+  } catch (err) {
     console.error("Error fetching filtered jobs:", err);
     return res.status(500).json({
       error: "Failed to fetch jobs.",
-      details:  err.message
+      details: err.message,
     });
   }
 };
@@ -990,8 +1280,7 @@ Return ONLY the JSON object without any additional text, explanation, or markdow
       }
 
       parsedAnalysis = JSON.parse(jsonStr.trim());
-    } 
-    catch (parseError) {
+    } catch (parseError) {
       console.error("JSON parsing error:", parseError);
       console.error("Raw analysis:", analysis);
 
@@ -1101,8 +1390,7 @@ const getMatchAnalyticsFromTemp = async (req, res) => {
     }
 
     // const resumeContent = await sendBufferToAffinda( resumeFile.buffer, resumeFile.originalname, resumeFile.mimetype);
-      const resumeContent = await pdfParse(resumeFile.buffer);
-    
+    const resumeContent = await pdfParse(resumeFile.buffer);
 
     if (resumeContent.status === "rejected") {
       return res.status(500).json({
@@ -1111,7 +1399,10 @@ const getMatchAnalyticsFromTemp = async (req, res) => {
       });
     }
 
-    const finalMatchResult = await matchResume(jobObject, JSON.stringify(resumeContent));
+    const finalMatchResult = await matchResume(
+      jobObject,
+      JSON.stringify(resumeContent)
+    );
 
     console.log(finalMatchResult);
 
@@ -1123,8 +1414,7 @@ const getMatchAnalyticsFromTemp = async (req, res) => {
     // }
 
     res.end(JSON.stringify(finalMatchResult));
-  }
-   catch (error) {
+  } catch (error) {
     console.error("Error:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
