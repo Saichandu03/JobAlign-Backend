@@ -30,6 +30,10 @@ const userSchema = new mongoose.Schema({
   resumeUrl :{
     type : String
   },
+  atsScore : {
+    type : Number,
+    default : 0
+  },
   dailyCounter: {
     type: Number,
     default: 3

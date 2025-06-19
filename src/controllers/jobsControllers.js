@@ -1013,8 +1013,10 @@ const fetchAllJobs = async (filters) => {
           logoUrl: null,
           companyUrl: null,
         };
+        // console.log(job);
 
         return {
+          uniqueId : job.id ,
           title: job.title,
           company: companyName,
           location: job.location?.display_name || null,

@@ -120,6 +120,7 @@ async function saveResumeContent(userId, fileName, data, resumeUrl) {
 
 // Main controller function
 const addResume = async (req, res) => {
+  console.log(req.body);
   try {
 
     console.log(req.body);
@@ -134,17 +135,37 @@ const addResume = async (req, res) => {
     }
 
     // Parallel Cloudinary + Affinda
+    // const [resumeUrl, parsedResume] = await Promise.all([
+    //   uploadToCloudinary(userId, file.buffer, file.originalname),
+    //   // sendBufferToAffinda(file.buffer, file.originalname, file.mimetype),
+    //   pdfParse(file.buffer),
+    // ]);
+
+    // const [savedResume, updatedUser] = await Promise.all([
+    //   saveResumeContent(userId, file.originalname, parsedResume),
+    //   userSchema.findByIdAndUpdate(
+    //     userId,
+    //     { $set: { resumeUrl: resumeUrl }, $set: { atsScore: atsScore.percentage } },
+    //     { new: true }
+    //   ),
+    // ]);
+
     const [resumeUrl, parsedResume] = await Promise.all([
       uploadToCloudinary(userId, file.buffer, file.originalname),
       // sendBufferToAffinda(file.buffer, file.originalname, file.mimetype),
       pdfParse(file.buffer),
     ]);
 
-    const [savedResume, updatedUser] = await Promise.all([
+    const atsScore = await analyzeResumeWithATS(parsedResume);
+
+    await Promise.all([
       saveResumeContent(userId, file.originalname, parsedResume, resumeUrl),
       userSchema.findByIdAndUpdate(
         userId,
-        { $set: { resumeUrl: resumeUrl } },
+        {
+          $set: { resumeUrl: resumeUrl },
+          $set: { atsScore: atsScore.percentage },
+        },
         { new: true }
       ),
     ]);
@@ -160,11 +181,89 @@ const addResume = async (req, res) => {
   }
 };
 
-const checkATS = async (req, res) => {
-  const file = req.file;
-  const userId = req.body.userId;
-  const resumeText = await pdfParse(file.buffer);
+// const checkATS = async (req, res) => {
+//   const file = req.file;
+//   const userId = req.body.userId;
+//   const resumeText = await pdfParse(file.buffer);
 
+//   try {
+//     const prompt = `You are an expert ATS (Applicant Tracking System) analyzer. Analyze ONLY resumes and CVs for technical roles. For any non-resume content, respond with "This is not a resume/CV content."
+
+// For resume/CV content, provide analysis in this exact JSON format:
+
+// {
+//   "percentage": [number 0-100],
+//   "strengths": [
+//     "[strength - 1]",
+//     "[strength - 2]"...
+//   ],
+//   "issues": [
+//     "[ ATS/formatting/technical issue - 1]",
+//     "[ ATS/formatting/technical issue - 2]"...
+//   ],
+//   "improvements": [
+//     "[improvement -1]",
+//     "[improvement -2]"....
+//   ]
+// }
+
+// Rules:
+// - Only analyze resumes/CVs, reject other content types
+// - Be SPECIFIC and CLEAR in every point
+// - Each point must be exactly 10 words or less but highly detailed
+// - Provide atmost 6 points per section
+// - Mention exact technologies, frameworks, versions when possible
+// - ATS score based on parsing issues, keyword optimization, technical depth
+// - Identify specific formatting problems affecting ATS parsing
+// - Focus on concrete technical skills gaps and improvements
+// - Avoid generic advice, provide actionable specific recommendations
+
+// Resume Content: ${resumeText.text}
+// `;
+
+//     const result = await model.generateContent(prompt);
+
+//     function extractAndParseJson(responseString) {
+//       try {
+//         // Extract JSON from markdown code blocks
+//         const jsonMatch = responseString.match(/```json\s*([\s\S]*?)\s*```/);
+
+//         if (jsonMatch) {
+//           const jsonString = jsonMatch[1].trim();
+//           return JSON.parse(jsonString);
+//         } else {
+//           // Try to find JSON without code blocks
+//           const jsonStart = responseString.indexOf("{");
+//           const jsonEnd = responseString.lastIndexOf("}") + 1;
+
+//           if (jsonStart !== -1 && jsonEnd > jsonStart) {
+//             const jsonString = responseString.substring(jsonStart, jsonEnd);
+//             return JSON.parse(jsonString);
+//           }
+//         }
+
+//         return null;
+//       } catch (error) {
+//         console.error("Error extracting JSON:", error);
+//         return null;
+//       }
+//     }
+
+//     const parsedJson = extractAndParseJson(result.response.text());
+//     if (parsedJson === null) {
+//       res.status(201).json("Please Provide a Valid Resume");
+//     } else {
+//       res.status(200).json(parsedJson);
+//     }
+//   } catch (error) {
+//     console.error("Error in main function:", error);
+//     res
+//       .status(500)
+//       .json({ error: "Internal server error", message: error.message });
+//   }
+// };
+
+const analyzeResumeWithATS = async (resumeText) => {
   try {
     const prompt = `You are an expert ATS (Applicant Tracking System) analyzer. Analyze ONLY resumes and CVs for technical roles. For any non-resume content, respond with "This is not a resume/CV content."
 
@@ -229,17 +328,61 @@ Resume Content: ${resumeText.text}
     }
 
     const parsedJson = extractAndParseJson(result.response.text());
-    if (parsedJson === null) {
-      res.status(201).json("Please Provide a Valid Resume");
-    } else {
-      res.status(200).json(parsedJson);
-    }
+    return parsedJson;
   } catch (error) {
     console.error("Error in main function:", error);
-    res
+    return { message: "Internal Server Error", error: error.message };
+  }
+};
+
+const extractAndParseJson = (responseString) => {
+  try {
+    // Extract JSON from markdown code blocks
+    const jsonMatch = responseString.match(/```json\s*([\s\S]*?)\s*```/);
+
+    if (jsonMatch) {
+      const jsonString = jsonMatch[1].trim();
+      return JSON.parse(jsonString);
+    } else {
+      // Try to find JSON without code blocks
+      const jsonStart = responseString.indexOf("{");
+      const jsonEnd = responseString.lastIndexOf("}") + 1;
+
+      if (jsonStart !== -1 && jsonEnd > jsonStart) {
+        const jsonString = responseString.substring(jsonStart, jsonEnd);
+        return JSON.parse(jsonString);
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error extracting JSON:", error);
+    return null;
+  }
+};
+
+const getAtsAnalysis = async (req, res) => {w
+  const file = req.file;
+  const userId = req.body.userId;
+
+  if (!file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  try {
+    const resumeText = await pdfParse(file.buffer);
+    console.log(resumeText);
+    const analysisResult = await analyzeResumeWithATS(resumeText);
+    if (analysisResult === null) {
+      return res.status(400).json({ error: "Please provide a valid resume" });
+    }
+    return res.status(200).json(analysisResult);
+  } catch (error) {
+    console.error("Error in ATS analysis:", error);
+    return res
       .status(500)
       .json({ error: "Internal server error", message: error.message });
   }
 };
 
-module.exports = { addResume, checkATS };
+module.exports = { addResume, getAtsAnalysis };
