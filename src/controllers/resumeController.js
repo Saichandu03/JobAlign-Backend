@@ -361,7 +361,7 @@ const extractAndParseJson = (responseString) => {
   }
 };
 
-const getAtsAnalysis = async (req, res) => {w
+const getAtsAnalysis = async (req, res) => {
   const file = req.file;
   const userId = req.body.userId;
 

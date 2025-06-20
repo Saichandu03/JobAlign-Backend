@@ -1016,7 +1016,7 @@ const fetchAllJobs = async (filters) => {
         // console.log(job);
 
         return {
-          uniqueId : job.id ,
+          uniqueId: job.id,
           title: job.title,
           company: companyName,
           location: job.location?.display_name || null,
@@ -1326,8 +1326,7 @@ const matchResume = async (jobObject, resumeContent) => {
     try {
       const rr = JSON.parse(analysis.trim());
       console.log(rr);
-      return rr
-      
+      return rr;
     } catch (error) {
       console.error("JSON parsing error:", error);
       console.error("Raw analysis:", jsonStr);
@@ -1431,6 +1430,8 @@ const getMatchAnalyticsFromTemp = async (req, res) => {
   }
 };
 
+
+
 // Cache cleanup job
 cron.schedule("09 00 * * *", () => {
   cache.clear();
@@ -1441,5 +1442,5 @@ module.exports = {
   getFilteredJobs,
   getJobDetails,
   getMatchAnalyticsFromMain,
-  getMatchAnalyticsFromTemp,
+  getMatchAnalyticsFromTemp
 };

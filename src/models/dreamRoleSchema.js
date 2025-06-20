@@ -1,52 +1,28 @@
-const mongoose = require('mongoose');
-
-const TopicSchema = new mongoose.Schema({
-  topicName: {
-    type: String,
-    required: true,
-  },
-  description: {
-    type: String,
-    required: true,
-  },
-  completed: {
-    type: Boolean,
-    default: false,
-  },
-  score: {
-    type: Number,
-    default: null,
-  },
-});
-
-const SkillSchema = new mongoose.Schema({
-  skillName: {
-    type: String,
-    required: true,
-  },
-  description: {
-    type: String,
-    required: true,
-  },
-  topics: {
-    type: [TopicSchema],
-    default: [],
-  },
-});
+const mongoose = require('mongoose')
 
 const dreamRoleSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
-  },
-  dreamRole: {
-    type: String,
-    required: true,
-  },
-  skills: {
-    type: [SkillSchema],
-    default: [],
-  },
-});
+    userId :{
+        type : mongoose.Schema.Types.ObjectId,
+        ref : 'User',
+        required : true
+    },
+    name : {
+        type : String,
+        required : true,
+    },
+    description : {
+        type : String,
+        required : true
+    },
+    skills :{
+        type : Array,
+        required : true
+    },
+    responsibilities :{
+        type : Array,
+        required : true
+    }
+})
 
-module.exports = mongoose.model('dreamRole', dreamRoleSchema);
+
+module.exports = mongoose.model("dreamRoleSchema", dreamRoleSchema);

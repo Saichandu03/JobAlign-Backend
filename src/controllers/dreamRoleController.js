@@ -1,13 +1,19 @@
-const dreamRoleSchema = require("../models/dreamRoleSchema");
 const dreamCompanySchema = require("../models/dreamComanySchema");
 const companySchema = require("../models/companySchema");
 const rolesSchema = require("../models/rolesSchema");
+const roadMapSchema = require("../models/roadMapSchema")
+const dreamRoadMapSchema = require("../models/dreamRoadMapSchema")
+const testSchema = require("../models/dreamRoleTestSchema");
 const Together = require("together-ai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { parse } = require("dotenv");
+const dreamRoleSchema = require("../models/dreamRoleSchema");
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
+const genAI2 = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY_2);
+
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model2 = genAI2.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const together = new Together({
   apiKey: process.env.TOGETHER_API_KEY,
@@ -201,7 +207,6 @@ const together = new Together({
 //   }
 // };
 
-
 const parseJson = (content) => {
   const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
   const match = content.match(jsonRegex);
@@ -280,8 +285,57 @@ Example JSON Structure (for internal reference, actual content varies based on r
   }
 };
 
+const generateRoleDetails = async (role) => {
+const prompt = `You are a highly specialized data researcher for career platforms, focused on generating accurate and professional job role information. Your task is to create a comprehensive JSON object for a specific job role ${role}, following this exact structure:
+{
+  "name": "Exact, official job role title",
+  "description": "Professional 60-80 word summary of the role, its primary purpose within an organization, key contributions, and overall impact.",
+  "skills": ["At least 5 essential technical skills (e.g., programming languages, tools, frameworks)", "At least 3 essential soft skills (e.g., communication, problem-solving, teamwork)"],
+  "responsibilities": ["5-7 concise, action-oriented core duties and tasks associated with the role. Each point should be brief and highly accurate."]
+}
+
+CRITICAL REQUIREMENTS:
+1.  The 'roleName' field MUST be the exact, official title of the job role you are provided.
+2.  The 'description' must be a professional summary, strictly between 60-80 words, covering the role's purpose, key contributions, and impact.
+3.  'Skills' must be a well-balanced list of at least 5 technical and 3 soft skills, directly relevant to the role.
+4.  'responsibilities' must be a list of 5 to 7 concise, action-oriented bullet points, accurately reflecting the core duties of the role. Prioritize clarity and brevity for each point.
+5.  Validate all information (description, keySkills, responsibilities) through a minimum of 3 reliable sources (e.g., major job boards, industry-standard role definitions, professional organizations).
+6.  Maintain a professional, informative, and appealing tone, suitable for job seekers.
+7.  Return ONLY valid JSON with no additional text, explanations, or markdown outside the JSON block.
+
+QUALITY STANDARDS:
+-   The 'description' must contain all specified elements within the word count.
+-   'Skills' and 'responsibilities' must be highly relevant, accurate, and comprehensive for the specified role.
+-   Each responsibility point must be a brief, clear action statement.
+
+**To trigger the response, you must provide the specific job role name.**
+
+For example, if you provide "${role}", the JSON should contain information for that role.
+
+RETURN ONLY THE JSON OBJECT. DO NOT INCLUDE ANY OTHER TEXT OR MARKDOWN.`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const analysisText = response.text();
+
+    const jsonRoleObject = parseJson(analysisText);
+    if (!jsonRoleObject) {
+      throw new Error("Failed to parse generated role skills JSON");
+    }
+
+    return jsonRoleObject;
+  } catch (error) {
+    console.error(`Error generating data for role ${role}:`, error);
+    throw new Error(
+      `Failed to generate data for role: ${role}. ${error.message}`
+    );
+  }
+};
+
 const generateCompanyDetails = async (company) => {
-  const prompt = `You are a professional data researcher specializing in company information for career platforms. Your task is to create a comprehensive, accurate JSON object for "${company}" with this exact structure:
+  const prompt = `
+You are a professional data researcher specializing in company information for career platforms. Your task is to create a comprehensive, accurate JSON object for "${company}" with this exact structure:
 
 {
   "name": "Full official company name",
@@ -292,16 +346,16 @@ const generateCompanyDetails = async (company) => {
 }
 
 CRITICAL REQUIREMENTS:
-1. The 'logo' field MUST be dynamically generated using the format https://logo.clearbit.com/{domain}, where {domain} is the primary domain. Ensure this URL is functional and points to a high-resolution logo.
-2. Validate all other information (overview, topRoles, locations) through at least 3 reliable sources.
-3. Prioritize career-relevant details for job seekers.
-4. Maintain a professional yet motivational tone.
-5. Return ONLY valid JSON with no additional text or explanations.
+1.  The 'logo' field MUST be dynamically generated using the format "https://logo.clearbit.com/{domain}". **For "Technical Hub", ensure you use 'technicalhub.io' as the primary domain to generate the logo URL.** This URL must be functional and point to a high-resolution logo.
+2.  Validate all other information (overview, topRoles, locations) through at least 3 reliable sources, specifically focusing on the "Technical Hub" based in Surampalem, Andhra Pradesh, India.
+3.  Prioritize career-relevant details for job seekers.
+4.  Maintain a professional yet motivational tone.
+5.  Return ONLY valid JSON with no additional text or explanations.
 
 QUALITY STANDARDS:
-- The 'logo' URL must be a direct image link (PNG/JPG) generated from the Clearbit API format.
-- The 'overview' must include all specified elements.
-- 'locations' must be specific office cities, not regions.
+-   The 'logo' URL must be a direct image link (PNG/JPG) generated from the Clearbit API format using ${company}.
+-   The 'overview' must include all specified elements.
+-   'locations' must be specific office cities, not regions.
 
 RETURN ONLY THE JSON OBJECT. DO NOT INCLUDE ANY OTHER TEXT OR MARKDOWN.`;
 
@@ -326,13 +380,15 @@ RETURN ONLY THE JSON OBJECT. DO NOT INCLUDE ANY OTHER TEXT OR MARKDOWN.`;
 
 const checkExistingData = async (dreamCompany, dreamRole) => {
   try {
-    const [existingCompany, existingRole] = await Promise.all([
+    const [existingCompany, existingRole, existingRoadMap] = await Promise.all([
       companySchema.findOne({ name: dreamCompany }),
       rolesSchema.findOne({ name: dreamRole }),
+      roadMapSchema.findOne({ name: dreamRole }),
     ]);
 
     let companyData = null;
     let roleData = null;
+    let roadMapData = null;
 
     if (existingCompany) {
       try {
@@ -348,6 +404,7 @@ const checkExistingData = async (dreamCompany, dreamRole) => {
     if (existingRole) {
       try {
         roleData = JSON.parse(existingRole.data);
+        roadMapData = JSON.parse(existingRoadMap.data)
       } catch (parseError) {
         console.warn(
           `Error parsing existing role data for ${dreamRole}:`,
@@ -359,6 +416,7 @@ const checkExistingData = async (dreamCompany, dreamRole) => {
     return {
       company: companyData,
       role: roleData,
+      roadMap: roadMapData,
       hasCompany: !!companyData,
       hasRole: !!roleData,
     };
@@ -395,6 +453,15 @@ const generateMissingData = async (existingData, dreamCompany, dreamRole) => {
     generationTasks.push(
       generateSkillRoadmap(dreamRole).catch((error) => {
         console.error(
+          `Failed to generate dream Role Data for ${dreamRole}:`,
+          error
+        );
+        return null;
+      })
+    );
+    generationTasks.push(
+      generateRoleDetails(dreamRole).catch((error) => {
+        console.error(
           `Failed to generate skill roadmap for ${dreamRole}:`,
           error
         );
@@ -407,24 +474,28 @@ const generateMissingData = async (existingData, dreamCompany, dreamRole) => {
 
   let newCompanyData = null;
   let newRoleData = null;
+  let newRoadMapData = null;
 
   let resultIndex = 0;
   if (!hasCompany) {
     newCompanyData = results[resultIndex++];
   }
   if (!hasRole) {
+    newRoadMapData = results[resultIndex++]
     newRoleData = results[resultIndex++];
   }
 
   return {
     newCompanyData,
     newRoleData,
+    newRoadMapData
   };
 };
 
 const saveNewDataToMasterCollections = async (
   newCompanyData,
   newRoleData,
+  newRoadMapData,
   dreamCompany,
   dreamRole
 ) => {
@@ -448,6 +519,14 @@ const saveNewDataToMasterCollections = async (
         }).save()
       );
     }
+    if (newRoadMapData) {
+      saveOperations.push(
+        new roadMapSchema({
+          name: dreamRole,
+          data: JSON.stringify(newRoadMapData),
+        }).save()
+      );
+    }
 
     if (saveOperations.length > 0) {
       await Promise.all(saveOperations);
@@ -461,89 +540,10 @@ const saveNewDataToMasterCollections = async (
   }
 };
 
-// const saveToDreamCollections = async (
-//   companyData,
-//   roleData,
-//   dreamCompany,
-//   dreamRole,
-//   userId
-// ) => {
-//   const saveOperations = [];
-
-//   try {
-//     if (companyData) {
-//       saveOperations.push(
-//         new dreamCompanySchema({
-//           userId: userId,
-//           ...companyData,
-//         }).save()
-//       );
-//     }
-
-//     if (roleData) {
-//       let skillsArray = null;
-
-//       if (Array.isArray(roleData)) {
-//         skillsArray = roleData;
-//       } else if (roleData[dreamRole] && Array.isArray(roleData[dreamRole])) {
-//         skillsArray = roleData[dreamRole];
-//       } else if (typeof roleData === "object") {
-//         const keys = Object.keys(roleData);
-//         for (const key of keys) {
-//           if (Array.isArray(roleData[key])) {
-//             skillsArray = roleData[key];
-//             break;
-//           }
-//         }
-//       }
-
-//       if (!Array.isArray(skillsArray)) {
-//         console.error("Could not find skills array in role data:", roleData);
-//         throw new Error(
-//           "Invalid role data structure - expected array of skills"
-//         );
-//       }
-
-//       const transformedSkills = skillsArray.map((skillGroup) => {
-//         if (!skillGroup || typeof skillGroup !== "object") {
-//           console.error("Invalid skill group:", skillGroup);
-//           throw new Error("Invalid skill group structure");
-//         }
-
-//         return {
-//           skillName:
-//             skillGroup.skill || skillGroup.skillName || "Unknown Skill",
-//           description:
-//             skillGroup.description || `Essential skill for ${dreamRole}`,
-//           topics: skillGroup.topics || [],
-//         };
-//       });
-
-//       saveOperations.push(
-//         new dreamRoleSchema({
-//           userId: userId,
-//           dreamRole: dreamRole,
-//           skills: transformedSkills,
-//         }).save()
-//       );
-//     }
-
-//     if (saveOperations.length > 0) {
-//       await Promise.all(saveOperations);
-//     }
-//   } catch (error) {
-//     console.error("Error saving data to dream collections:", error);
-//     console.error("Full error details:", error);
-//     throw new Error(
-//       `Dream collections save operation failed: ${error.message}`
-//     );
-//   }
-// };
-
-
 const saveToDreamCollections = async (
   companyData,
   roleData,
+  roadMapData,
   dreamCompany,
   dreamRole,
   userId
@@ -556,34 +556,47 @@ const saveToDreamCollections = async (
         dreamCompanySchema.findOneAndUpdate(
           { userId: userId },
           { userId: userId, ...companyData },
-          { 
-            upsert: true, 
+          {
+            upsert: true,
             new: true,
-            runValidators: true 
+            runValidators: true,
+          }
+        )
+      );
+    }
+    if (roleData) {
+      saveOperations.push(
+        dreamRoleSchema.findOneAndUpdate(
+          { userId: userId },
+          { userId: userId, ...roleData },
+          {
+            upsert: true,
+            new: true,
+            runValidators: true,
           }
         )
       );
     }
 
-    if (roleData) {
+    if (roadMapData) {
       let skillsArray = null;
 
-      if (Array.isArray(roleData)) {
-        skillsArray = roleData;
-      } else if (roleData[dreamRole] && Array.isArray(roleData[dreamRole])) {
-        skillsArray = roleData[dreamRole];
-      } else if (typeof roleData === "object") {
-        const keys = Object.keys(roleData);
+      if (Array.isArray(roadMapData)) {
+        skillsArray = roadMapData;
+      } else if (roadMapData[dreamRole] && Array.isArray(roadMapData[dreamRole])) {
+        skillsArray = roadMapData[dreamRole];
+      } else if (typeof roadMapData === "object") {
+        const keys = Object.keys(roadMapData);
         for (const key of keys) {
-          if (Array.isArray(roleData[key])) {
-            skillsArray = roleData[key];
+          if (Array.isArray(roadMapData[key])) {
+            skillsArray = roadMapData[key];
             break;
           }
         }
       }
 
       if (!Array.isArray(skillsArray)) {
-        console.error("Could not find skills array in role data:", roleData);
+        console.error("Could not find skills array in role data:", roadMapData);
         throw new Error(
           "Invalid role data structure - expected array of skills"
         );
@@ -605,17 +618,17 @@ const saveToDreamCollections = async (
       });
 
       saveOperations.push(
-        dreamRoleSchema.findOneAndUpdate(
+        dreamRoadMapSchema.findOneAndUpdate(
           { userId: userId },
           {
             userId: userId,
             dreamRole: dreamRole,
             skills: transformedSkills,
           },
-          { 
-            upsert: true, 
+          {
+            upsert: true,
             new: true,
-            runValidators: true 
+            runValidators: true,
           }
         )
       );
@@ -632,7 +645,6 @@ const saveToDreamCollections = async (
     );
   }
 };
-
 
 const addDreamRole = async (req, res) => {
   try {
@@ -653,43 +665,72 @@ const addDreamRole = async (req, res) => {
 
     let finalCompanyData = existingData.company;
     let finalRoleData = existingData.role;
+    let finalRoadMapData = existingData.roadMap
+
+    // if (!existingData.hasCompany || !existingData.hasRole) {
+    //   const { newCompanyData, newRoleData, newRoadMapData } = await generateMissingData(
+    //     existingData,
+    //     dreamCompany,
+    //     dreamRole
+    //   );
+
+    //   if (!existingData.hasCompany && !newCompanyData) {
+    //     return res.status(500).json("Failed to generate company details");
+    //   }
+
+    //   if (!existingData.hasRole && !newRoleData) {
+    //     return res.status(500).json("Failed to generate role skill roadmap");
+    //   }
+
+    //   await saveNewDataToMasterCollections(
+    //     newCompanyData,
+    //     newRoleData,
+    //     newRoadMapData,
+    //     dreamCompany,
+    //     dreamRole
+    //   );
+
+    //   if (newCompanyData) finalCompanyData = newCompanyData;
+    //   if (newRoleData) finalRoleData = newRoleData;
+    //   if(newRoadMapData) finalRoadMapData = newRoadMapData;
+    // }
+
+    // await saveToDreamCollections(
+    //   finalCompanyData,
+    //   finalRoleData,
+    //   finalRoadMapData,
+    //   dreamCompany,
+    //   dreamRole,
+    //   userId
+    // );
 
     if (!existingData.hasCompany || !existingData.hasRole) {
-      const { newCompanyData, newRoleData } = await generateMissingData(
-        existingData,
-        dreamCompany,
-        dreamRole
-      );
+      const { newCompanyData, newRoleData, newRoadMapData } = 
+        await generateMissingData(existingData, dreamCompany, dreamRole);
 
       if (!existingData.hasCompany && !newCompanyData) {
         return res.status(500).json("Failed to generate company details");
       }
-
       if (!existingData.hasRole && !newRoleData) {
         return res.status(500).json("Failed to generate role skill roadmap");
       }
 
-
-      
-      await saveNewDataToMasterCollections(
-        newCompanyData,
-        newRoleData,
-        dreamCompany,
-        dreamRole
-      );
-
+      // Update final data references
       if (newCompanyData) finalCompanyData = newCompanyData;
       if (newRoleData) finalRoleData = newRoleData;
+      if (newRoadMapData) finalRoadMapData = newRoadMapData;
+
+      // THIS IS THE KEY OPTIMIZATION: Run both save operations in parallel
+      // Instead of: save master -> then save dream (sequential)
+      // Do: save master || save dream (parallel)
+      await Promise.all([
+        saveNewDataToMasterCollections(newCompanyData, newRoleData, newRoadMapData, dreamCompany, dreamRole),
+        saveToDreamCollections(finalCompanyData, finalRoleData, finalRoadMapData, dreamCompany, dreamRole, userId)
+      ]);
+    } else {
+      // If no generation needed, just save to dream collections
+      await saveToDreamCollections(finalCompanyData, finalRoleData, finalRoadMapData, dreamCompany, dreamRole, userId);
     }
-
-    await saveToDreamCollections(
-      finalCompanyData,
-      finalRoleData,
-      dreamCompany,
-      dreamRole,
-      userId
-    );
-
     return res.status(201).json("Dream role created successfully");
   } catch (error) {
     console.error("Error in addDreamRole:", error);
@@ -699,7 +740,207 @@ const addDreamRole = async (req, res) => {
   }
 };
 
+const purify = (analysis) => {
+  try {
+    const jsonMatch = analysis.match(/```json\s*([\s\S]*?)\s*```/) ||
+      analysis.match(/```\s*([\s\S]*?)\s*```/) || [null, analysis];
+    const jsonStr = jsonMatch[1] || analysis;
+    return JSON.parse(jsonStr.trim());
+  } catch (parseError) {
+    console.error("JSON parsing error:", parseError);
+    return null;
+  }
+};
+
+const getTopicQuestions = async (req, res) => {
+  const { topic, description } = req.body;
+
+  if (!topic) {
+    return res.status(400).json("Missing required field Topic");
+  }
+
+  if (!description) {
+    return res.status(400).json("Missing required field Description");
+  }
+
+  const prompt = `Generate exactly 5 unique, beginner-level questions for the topic '{topicName: \"${topic}\", description: \"${description}\"}'.
+
+Requirements:
+- Each question must cover a DIFFERENT concept (no repetition).
+- Use simple, descriptive language (max 20 words per question).
+- Base on real-world scenarios: apps, shopping, games, social media, restaurants, etc.
+- Format for mobile users who describe solutions, not write code.
+- Use "How would you..." or "Describe..." question formats.
+- Target complete beginners with no coding experience.
+
+Return ONLY valid JSON in this exact format:
+[
+  {"question-1": "..."},
+  {"question-2": "..."}....
+]`;
+
+  try {
+    const result = await model2.generateContent(prompt);
+    const response = await result.response;
+    const analysis = response.text();
+
+    const parsedAnalysis = purify(analysis);
+    if (parsedAnalysis == null) {
+      return res
+        .status(500)
+        .send("Internal Server Error! Please contact support.");
+    }
+
+    res.status(200).json(parsedAnalysis);
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ message: "Internal Server Error!", err: error });
+  }
+};
+
+const checkTestAnswers = async (req, res) => {
+  const { userId, topicId, answersObject } = req.body;
+
+  if (!userId) {
+    return res.status(400).json("Missing required field User ID");
+  }
+  if (!topicId) {
+    return res.status(400).json("Missing required field Topic ID");
+  }
+  if (!answersObject) {
+    res.status(400).send("Missing required fields Answers Object Array");
+  }
+
+  const prompt = `Given the following JSON array containing beginner-level questions and their corresponding human-provided answers for a specific technical concept:${JSON.stringify(
+    answersObject
+  )}
+
+Please evaluate each 'answer' based on how accurately and clearly it describes a solution to its 'question' in a real-world, mobile-centric scenario, suitable for a complete beginner with no coding experience.
+
+When evaluating:
+- **Prioritize conceptual understanding:** Overlook minor typos, grammatical errors, or informal language. Focus on the core idea being conveyed by the human answer.
+- **Assess accuracy:** Does the answer correctly describe a relevant solution using the stated concept?
+- **Assess clarity and simplicity:** Is the explanation easy for a beginner to understand?
+- **Adhere to 'describe solutions, not write code' principle.**
+
+For each question-answer pair in the array, add two new keys:
+- "match_score": A percentage (0-100%) indicating how well the answer matches and addresses the question according to the criteria.
+- "comment": A brief, professional comment explaining the reasoning for the score and highlighting what was good or what could be improved in the answer's conceptual clarity.
+
+Finally, calculate an "overall_score" for all questions combined by averaging their individual "match_score" percentages.
+
+Return ONLY a valid JSON object in this exact format, with no additional text or formatting:
+{
+  "score": 1-100,
+  "response": [
+    {"question-1": "...", "answer-1": "...", "match_score": "...", "comment": "..."}, ....
+  ]
+}
+`;
+
+  try {
+    const result = await model2.generateContent(prompt);
+    const response = await result.response;
+    const analysis = response.text();
+
+    const parsedAnalysis = purify(analysis);
+    if (parsedAnalysis == null) {
+      return res
+        .status(500)
+        .send("Internal Server Error! Please contact support.");
+    }
+
+    if (parsedAnalysis.score >= 75) {
+      const test = await testSchema({
+        userId: userId,
+        topicId: topicId,
+        score: parsedAnalysis.score,
+        response: parsedAnalysis.response,
+      });
+      await test.save();
+    }
+    res.status(200).json(parsedAnalysis);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal Server Error!", err: err });
+  }
+};
+
+const getRoadMap = async (req, res) => {
+  const {userId} = req.body;
+  if(!userId){
+    return res.status(400).json({message: "User ID is required."});
+  }
+  try {
+    const roadMap = await dreamRoadMapSchema.find({ userId: userId });
+    res.status(200).send(roadMap);
+  } catch (err) {
+    console.log("Error" + err);
+    res.status(500).send({
+      message: "Internal Server Error! Please contact support.",
+      err: err,
+    });
+  }
+};
+
+const getRoleData = async(req, res) =>{
+  const {userId} = req.body;
+  if(!userId){
+    return res.status(400).json({message: "User ID is required."});
+  }
+  try{
+    roleData = await dreamRoleSchema.find({userId : userId});
+    res.status(200).send(roleData);
+  }
+  catch(err){
+    console.log("Error" + err);
+    res.status(500).send({
+      message: "Internal Server Error! Please contact support.",
+      err: err,
+      });
+  }
+}
+
+const getCompanyData = async(req, res) =>{
+  const {userId} = req.body;
+  if(!userId){
+    return res.status(400).json({message: "User ID is required."});
+  }
+  try{
+    const companyData = await dreamCompanySchema.find({userId: userId});
+    res.status(200).send(companyData);
+    }
+    catch(err){
+      console.log("Error" + err);
+       res.status(500).send({
+      message: "Internal Server Error! Please contact support.",
+      err: err,
+      });
+}
+}
+
+const getTopicTestResult = async(req, res) =>{
+  const {userId, topicId} = req.body;
+  console.log(userId, topicId);
+  try{
+    const topicTestResult = await testSchema.find({userId: userId, topicId : topicId});
+    res.status(200).send(topicTestResult);
+  }
+  catch(err){
+    console.log("Error" + err);
+    res.status(500).send({
+      message: "Internal Server Error! Please contact support.",
+      err: err,
+      });
+  }
+}
 
 module.exports = {
   addDreamRole,
+  getTopicQuestions,
+  checkTestAnswers,
+  getRoadMap,
+  getCompanyData,
+  getRoleData,
+  getTopicTestResult
 };
