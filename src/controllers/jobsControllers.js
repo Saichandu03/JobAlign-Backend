@@ -1000,7 +1000,7 @@ const fetchAllJobs = async (filters) => {
     const logoService = new CompanyLogoService();
     const logoResults = await logoService.batchFetchLogos([...companyNames]);
 
-    const allJobs = validJobs.map(
+    const allJobs = validJobs.slice(0, 250).map(
       ({
         job,
         companyName,
