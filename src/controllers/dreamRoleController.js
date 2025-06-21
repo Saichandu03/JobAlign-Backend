@@ -1,8 +1,8 @@
 const dreamCompanySchema = require("../models/dreamComanySchema");
 const companySchema = require("../models/companySchema");
 const rolesSchema = require("../models/rolesSchema");
-const roadMapSchema = require("../models/roadMapSchema")
-const dreamRoadMapSchema = require("../models/dreamRoadMapSchema")
+const roadMapSchema = require("../models/roadMapSchema");
+const dreamRoadMapSchema = require("../models/dreamRoadMapSchema");
 const testSchema = require("../models/dreamRoleTestSchema");
 const Together = require("together-ai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
@@ -286,7 +286,7 @@ Example JSON Structure (for internal reference, actual content varies based on r
 };
 
 const generateRoleDetails = async (role) => {
-const prompt = `You are a highly specialized data researcher for career platforms, focused on generating accurate and professional job role information. Your task is to create a comprehensive JSON object for a specific job role ${role}, following this exact structure:
+  const prompt = `You are a highly specialized data researcher for career platforms, focused on generating accurate and professional job role information. Your task is to create a comprehensive JSON object for a specific job role ${role}, following this exact structure:
 {
   "name": "Exact, official job role title",
   "description": "Professional 60-80 word summary of the role, its primary purpose within an organization, key contributions, and overall impact.",
@@ -404,7 +404,7 @@ const checkExistingData = async (dreamCompany, dreamRole) => {
     if (existingRole) {
       try {
         roleData = JSON.parse(existingRole.data);
-        roadMapData = JSON.parse(existingRoadMap.data)
+        roadMapData = JSON.parse(existingRoadMap.data);
       } catch (parseError) {
         console.warn(
           `Error parsing existing role data for ${dreamRole}:`,
@@ -481,14 +481,14 @@ const generateMissingData = async (existingData, dreamCompany, dreamRole) => {
     newCompanyData = results[resultIndex++];
   }
   if (!hasRole) {
-    newRoadMapData = results[resultIndex++]
+    newRoadMapData = results[resultIndex++];
     newRoleData = results[resultIndex++];
   }
 
   return {
     newCompanyData,
     newRoleData,
-    newRoadMapData
+    newRoadMapData,
   };
 };
 
@@ -583,7 +583,10 @@ const saveToDreamCollections = async (
 
       if (Array.isArray(roadMapData)) {
         skillsArray = roadMapData;
-      } else if (roadMapData[dreamRole] && Array.isArray(roadMapData[dreamRole])) {
+      } else if (
+        roadMapData[dreamRole] &&
+        Array.isArray(roadMapData[dreamRole])
+      ) {
         skillsArray = roadMapData[dreamRole];
       } else if (typeof roadMapData === "object") {
         const keys = Object.keys(roadMapData);
@@ -665,7 +668,7 @@ const addDreamRole = async (req, res) => {
 
     let finalCompanyData = existingData.company;
     let finalRoleData = existingData.role;
-    let finalRoadMapData = existingData.roadMap
+    let finalRoadMapData = existingData.roadMap;
 
     // if (!existingData.hasCompany || !existingData.hasRole) {
     //   const { newCompanyData, newRoleData, newRoadMapData } = await generateMissingData(
@@ -705,7 +708,7 @@ const addDreamRole = async (req, res) => {
     // );
 
     if (!existingData.hasCompany || !existingData.hasRole) {
-      const { newCompanyData, newRoleData, newRoadMapData } = 
+      const { newCompanyData, newRoleData, newRoadMapData } =
         await generateMissingData(existingData, dreamCompany, dreamRole);
 
       if (!existingData.hasCompany && !newCompanyData) {
@@ -724,12 +727,32 @@ const addDreamRole = async (req, res) => {
       // Instead of: save master -> then save dream (sequential)
       // Do: save master || save dream (parallel)
       await Promise.all([
-        saveNewDataToMasterCollections(newCompanyData, newRoleData, newRoadMapData, dreamCompany, dreamRole),
-        saveToDreamCollections(finalCompanyData, finalRoleData, finalRoadMapData, dreamCompany, dreamRole, userId)
+        saveNewDataToMasterCollections(
+          newCompanyData,
+          newRoleData,
+          newRoadMapData,
+          dreamCompany,
+          dreamRole
+        ),
+        saveToDreamCollections(
+          finalCompanyData,
+          finalRoleData,
+          finalRoadMapData,
+          dreamCompany,
+          dreamRole,
+          userId
+        ),
       ]);
     } else {
       // If no generation needed, just save to dream collections
-      await saveToDreamCollections(finalCompanyData, finalRoleData, finalRoadMapData, dreamCompany, dreamRole, userId);
+      await saveToDreamCollections(
+        finalCompanyData,
+        finalRoleData,
+        finalRoadMapData,
+        dreamCompany,
+        dreamRole,
+        userId
+      );
     }
     return res.status(201).json("Dream role created successfully");
   } catch (error) {
@@ -799,7 +822,7 @@ Return ONLY valid JSON in this exact format:
 };
 
 const checkTestAnswers = async (req, res) => {
-  const { userId, topicId, answersObject } = req.body;
+  const { roadMapId, userId, skillId, topicId, answersObject } = req.body;
 
   if (!userId) {
     return res.status(400).json("Missing required field User ID");
@@ -809,6 +832,12 @@ const checkTestAnswers = async (req, res) => {
   }
   if (!answersObject) {
     res.status(400).send("Missing required fields Answers Object Array");
+  }
+  if (!skillId) {
+    res.status(400).send("Missing required fields Skill ID");
+  }
+  if (!roadMapId) {
+    res.status(400).send("Missing required fields Road Map ID");
   }
 
   const prompt = `Given the following JSON array containing beginner-level questions and their corresponding human-provided answers for a specific technical concept:${JSON.stringify(
@@ -851,13 +880,40 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
     }
 
     if (parsedAnalysis.score >= 75) {
-      const test = await testSchema({
-        userId: userId,
-        topicId: topicId,
-        score: parsedAnalysis.score,
-        response: parsedAnalysis.response,
-      });
-      await test.save();
+      const [updateResult, savedTest] = await Promise.all([
+        dreamRoadMapSchema.updateOne(
+          {
+            _id: roadMapId,
+            "skills._id": skillId,
+            "skills.topics._id": topicId,
+          },
+          {
+            $set: {
+              "skills.$[skill].topics.$[topic].completed": true,
+              "skills.$[skill].topics.$[topic].score": parsedAnalysis.score,
+            },
+          },
+          {
+            arrayFilters: [{ "skill._id": skillId }, { "topic._id": topicId }],
+          }
+        ),
+        testSchema.findOneAndUpdate(
+          {
+            userId: userId,
+            topicId: topicId,
+          },
+          {
+            userId: userId,
+            topicId: topicId,
+            score: parsedAnalysis.score,
+            response: parsedAnalysis.response,
+          },
+          {
+            upsert: true,
+            new: true,
+          }
+        ),
+      ]);
     }
     res.status(200).json(parsedAnalysis);
   } catch (err) {
@@ -867,9 +923,9 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
 };
 
 const getRoadMap = async (req, res) => {
-  const {userId} = req.body;
-  if(!userId){
-    return res.status(400).json({message: "User ID is required."});
+  const { userId } = req.body;
+  if (!userId) {
+    return res.status(400).json({ message: "User ID is required." });
   }
   try {
     const roadMap = await dreamRoadMapSchema.find({ userId: userId });
@@ -883,57 +939,57 @@ const getRoadMap = async (req, res) => {
   }
 };
 
-const getRoleData = async(req, res) =>{
-  const {userId} = req.body;
-  if(!userId){
-    return res.status(400).json({message: "User ID is required."});
+const getRoleData = async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) {
+    return res.status(400).json({ message: "User ID is required." });
   }
-  try{
-    roleData = await dreamRoleSchema.find({userId : userId});
+  try {
+    roleData = await dreamRoleSchema.find({ userId: userId });
     res.status(200).send(roleData);
-  }
-  catch(err){
+  } catch (err) {
     console.log("Error" + err);
     res.status(500).send({
       message: "Internal Server Error! Please contact support.",
       err: err,
-      });
+    });
   }
-}
+};
 
-const getCompanyData = async(req, res) =>{
-  const {userId} = req.body;
-  if(!userId){
-    return res.status(400).json({message: "User ID is required."});
+const getCompanyData = async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) {
+    return res.status(400).json({ message: "User ID is required." });
   }
-  try{
-    const companyData = await dreamCompanySchema.find({userId: userId});
+  try {
+    const companyData = await dreamCompanySchema.find({ userId: userId });
     res.status(200).send(companyData);
-    }
-    catch(err){
-      console.log("Error" + err);
-       res.status(500).send({
-      message: "Internal Server Error! Please contact support.",
-      err: err,
-      });
-}
-}
-
-const getTopicTestResult = async(req, res) =>{
-  const {userId, topicId} = req.body;
-  console.log(userId, topicId);
-  try{
-    const topicTestResult = await testSchema.find({userId: userId, topicId : topicId});
-    res.status(200).send(topicTestResult);
-  }
-  catch(err){
+  } catch (err) {
     console.log("Error" + err);
     res.status(500).send({
       message: "Internal Server Error! Please contact support.",
       err: err,
-      });
+    });
   }
-}
+};
+
+const getTopicTestResult = async (req, res) => {
+  const { userId, topicId } = req.body;
+  console.log(userId, topicId);
+  try {
+    const topicTestResult = await testSchema.find({
+      userId: userId,
+      topicId: topicId,
+    });
+    res.status(200).send(topicTestResult);
+  } catch (err) {
+    console.log("Error" + err);
+    res.status(500).send({
+      message: "Internal Server Error! Please contact support.",
+      err: err,
+    });
+  }
+};
 
 module.exports = {
   addDreamRole,
@@ -942,5 +998,5 @@ module.exports = {
   getRoadMap,
   getCompanyData,
   getRoleData,
-  getTopicTestResult
+  getTopicTestResult,
 };

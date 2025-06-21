@@ -554,6 +554,8 @@ const updatePreferedLocations = async (req, res) => {
 };
 
 const getUserData = async (req, res) => {
+    console.log("Comming for User Data...");
+
   try {
     const { userId } = req.body;
     if(!userId){

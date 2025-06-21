@@ -122,7 +122,6 @@ async function saveResumeContent(userId, fileName, data, resumeUrl) {
 const addResume = async (req, res) => {
   console.log(req.body);
   try {
-
     console.log(req.body);
     const userId = req.body.userId;
     const file = req.file;
@@ -156,19 +155,24 @@ const addResume = async (req, res) => {
       pdfParse(file.buffer),
     ]);
 
+    // console.log(resumeUrl);
+
     const atsScore = await analyzeResumeWithATS(parsedResume);
 
-    await Promise.all([
+     await Promise.all([
       saveResumeContent(userId, file.originalname, parsedResume, resumeUrl),
       userSchema.findByIdAndUpdate(
         userId,
         {
-          $set: { resumeUrl: resumeUrl },
-          $set: { atsScore: atsScore.percentage },
+          $set: {
+            resumeUrl: resumeUrl,
+            atsScore: atsScore.percentage,
+          },
         },
         { new: true }
       ),
     ]);
+    // console.log(resumeUrlSave);
 
     return res
       .status(200)

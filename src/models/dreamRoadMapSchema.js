@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const TopicSchema = new mongoose.Schema({
   topicName: {
@@ -34,19 +34,24 @@ const SkillSchema = new mongoose.Schema({
   },
 });
 
-const dreamRoadMapSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
+const dreamRoadMapSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+    },
+    dreamRole: {
+      type: String,
+      required: true,
+    },
+    skills: {
+      type: [SkillSchema],
+      default: [],
+    },
   },
-  dreamRole: {
-    type: String,
-    required: true,
-  },
-  skills: {
-    type: [SkillSchema],
-    default: [],
-  },
-});
+  {
+    timestamps: true,
+  }
+);
 
-module.exports = mongoose.model('dreamRoadMap', dreamRoadMapSchema);
+module.exports = mongoose.model("dreamRoadMap", dreamRoadMapSchema);
