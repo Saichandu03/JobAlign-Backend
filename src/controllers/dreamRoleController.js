@@ -8,7 +8,8 @@ const Together = require("together-ai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { parse } = require("dotenv");
 const dreamRoleSchema = require("../models/dreamRoleSchema");
-
+const userSchema = require("../models/userSchema");
+const dreamComanySchema = require("../models/dreamComanySchema");
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
 const genAI2 = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY_2);
 
@@ -649,6 +650,29 @@ const saveToDreamCollections = async (
   }
 };
 
+const saveDataToUser = async(userId,dreamRole, dreamCompany) =>{
+  console.log(userId, dreamRole, dreamCompany);
+  try{
+    const updateFields = {};
+    if (dreamRole !== undefined) updateFields.dreamRole = dreamRole;
+    if (dreamCompany !== undefined) updateFields.dreamCompany = dreamCompany;
+
+    const updatedData = await userSchema.findByIdAndUpdate(
+      userId, 
+      { $set: updateFields },
+      { 
+        new: false, 
+        runValidators: true
+      }
+    );
+    console.log(updatedData);
+  }
+  catch(err){
+    console.log("Error while saving The Dream Role And Company");
+    console.error(err);
+  }
+}
+
 const addDreamRole = async (req, res) => {
   try {
     const { userId, company, role } = req.body;
@@ -718,14 +742,11 @@ const addDreamRole = async (req, res) => {
         return res.status(500).json("Failed to generate role skill roadmap");
       }
 
-      // Update final data references
       if (newCompanyData) finalCompanyData = newCompanyData;
       if (newRoleData) finalRoleData = newRoleData;
       if (newRoadMapData) finalRoadMapData = newRoadMapData;
 
-      // THIS IS THE KEY OPTIMIZATION: Run both save operations in parallel
-      // Instead of: save master -> then save dream (sequential)
-      // Do: save master || save dream (parallel)
+
       await Promise.all([
         saveNewDataToMasterCollections(
           newCompanyData,
@@ -742,17 +763,29 @@ const addDreamRole = async (req, res) => {
           dreamRole,
           userId
         ),
+        saveDataToUser(
+          userId,
+          dreamCompany,
+          dreamRole
+        ),
       ]);
     } else {
-      // If no generation needed, just save to dream collections
-      await saveToDreamCollections(
+      await Promise.all([
+        saveDataToUser(
+          userId,
+          dreamCompany,
+          dreamRole
+        ),
+         saveToDreamCollections(
         finalCompanyData,
         finalRoleData,
         finalRoadMapData,
         dreamCompany,
         dreamRole,
         userId
-      );
+      )
+      ]);
+    
     }
     return res.status(201).json("Dream role created successfully");
   } catch (error) {
@@ -990,6 +1023,15 @@ const getTopicTestResult = async (req, res) => {
     });
   }
 };
+
+
+
+// const roadMap = JSON.stringify(road);
+
+const postRoadMapData = async(roadMap) =>{
+  const update = await new roadMapSchema(roadMap).save();
+}
+
 
 module.exports = {
   addDreamRole,

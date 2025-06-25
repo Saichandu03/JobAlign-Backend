@@ -7,6 +7,7 @@ require("dotenv").config();
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const userSchema = require("../models/userSchema");
+const atsSchema = require('../models/ATSSchema');
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -171,6 +172,7 @@ const addResume = async (req, res) => {
         },
         { new: true }
       ),
+      saveAnalysisResult(userId, atsScore)
     ]);
     // console.log(resumeUrlSave);
 
@@ -339,6 +341,31 @@ Resume Content: ${resumeText.text}
   }
 };
 
+const saveAnalysisResult = async (userId, analysisResult) => {
+  try {
+    const ats = await atsSchema.findOneAndUpdate(
+      { userId: userId },
+      {
+        userId: userId,
+        percentage: analysisResult.percentage,
+        strengths: analysisResult.strengths,
+        issues: analysisResult.issues,
+        improvements: analysisResult.improvements,
+        updatedAt: new Date()
+      },
+      {
+        upsert: true,
+        new: true,
+        runValidators: true
+      }
+    );
+    
+    return ats;
+  } catch (error) {
+    console.error('Error saving analysis result:', error);
+    throw error;
+  }
+}
 const extractAndParseJson = (responseString) => {
   try {
     // Extract JSON from markdown code blocks
@@ -380,6 +407,7 @@ const getAtsAnalysis = async (req, res) => {
     if (analysisResult === null) {
       return res.status(400).json({ error: "Please provide a valid resume" });
     }
+    await saveAnalysisResult(userId, analysisResult);
     return res.status(200).json(analysisResult);
   } catch (error) {
     console.error("Error in ATS analysis:", error);

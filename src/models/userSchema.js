@@ -47,6 +47,14 @@ const userSchema = new mongoose.Schema(
       type: Array,
       default: [],
     },
+    dreamCompany :{
+      type: String,
+      // require : true
+    }, 
+    dreamRole :{
+      type : String,
+      // require : true
+    }
   },
   {
     timestamps: true,
