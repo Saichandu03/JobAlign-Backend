@@ -35,17 +35,17 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    dailyCounter: {
+    monthlyCount: {
       type: Number,
-      default: 3,
+      default: 10,
     },
     preferedRoles: {
       type: Array,
-      default: [],
+      default: ["Full Stack Developer","Software Engineer "],
     },
     preferedLocations: {
       type: Array,
-      default: [],
+      default: ["Bangalore","Chennai"],
     },
     dreamCompany :{
       type: String,

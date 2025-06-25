@@ -7,7 +7,7 @@ require("dotenv").config();
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const userSchema = require("../models/userSchema");
-const atsSchema = require('../models/ATSSchema');
+const atsSchema = require("../models/ATSSchema");
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -133,6 +133,16 @@ const addResume = async (req, res) => {
     if (!file) {
       return res.status(400).json({ error: "Missing resume file" });
     }
+    const user = await userSchema.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.monthlyCount <= 0) {
+      return res
+        .status(400)
+        .json({ error: "User has reached resume upload limit" });
+    }
 
     // Parallel Cloudinary + Affinda
     // const [resumeUrl, parsedResume] = await Promise.all([
@@ -160,7 +170,7 @@ const addResume = async (req, res) => {
 
     const atsScore = await analyzeResumeWithATS(parsedResume);
 
-     await Promise.all([
+    await Promise.all([
       saveResumeContent(userId, file.originalname, parsedResume, resumeUrl),
       userSchema.findByIdAndUpdate(
         userId,
@@ -172,7 +182,8 @@ const addResume = async (req, res) => {
         },
         { new: true }
       ),
-      saveAnalysisResult(userId, atsScore)
+      saveAnalysisResult(userId, atsScore),
+      updateResumeCounter(userId),
     ]);
     // console.log(resumeUrlSave);
 
@@ -341,6 +352,12 @@ Resume Content: ${resumeText.text}
   }
 };
 
+const updateResumeCounter = async (userId) => {
+  await userSchema.findByIdAndUpdate(userId, {
+    $inc: { monthlyCount: -1 },
+  });
+};
+
 const saveAnalysisResult = async (userId, analysisResult) => {
   try {
     const ats = await atsSchema.findOneAndUpdate(
@@ -351,21 +368,21 @@ const saveAnalysisResult = async (userId, analysisResult) => {
         strengths: analysisResult.strengths,
         issues: analysisResult.issues,
         improvements: analysisResult.improvements,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       {
         upsert: true,
         new: true,
-        runValidators: true
+        runValidators: true,
       }
     );
-    
+
     return ats;
   } catch (error) {
-    console.error('Error saving analysis result:', error);
+    console.error("Error saving analysis result:", error);
     throw error;
   }
-}
+};
 const extractAndParseJson = (responseString) => {
   try {
     // Extract JSON from markdown code blocks
@@ -399,6 +416,17 @@ const getAtsAnalysis = async (req, res) => {
   if (!file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
+  if (!userId) {
+    return res.status(400).json({ error: "User Id is required" });
+  }
+  const user = await userSchema.findById(userId);
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  if (user.monthlyCount <= 0) {
+    return res.status(400).json({ error: "User has reached resume upload limit" });
+  }
 
   try {
     const resumeText = await pdfParse(file.buffer);
@@ -407,7 +435,11 @@ const getAtsAnalysis = async (req, res) => {
     if (analysisResult === null) {
       return res.status(400).json({ error: "Please provide a valid resume" });
     }
-    await saveAnalysisResult(userId, analysisResult);
+
+    await Promise.all([
+      saveAnalysisResult(userId, analysisResult),
+      updateResumeCounter(userId),
+    ]);
     return res.status(200).json(analysisResult);
   } catch (error) {
     console.error("Error in ATS analysis:", error);
@@ -417,4 +449,4 @@ const getAtsAnalysis = async (req, res) => {
   }
 };
 
-module.exports = { addResume, getAtsAnalysis };
+module.exports = { addResume, getAtsAnalysis, updateResumeCounter };

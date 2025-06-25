@@ -4,6 +4,7 @@ const { LRUCache } = require("lru-cache");
 const pdfParse = require("pdf-parse");
 const userSchema = require("../models/userSchema");
 const resumeSchema = require("../models/resumeSchema");
+const {updateResumeCounter} = require('./resumeController')
 require("dotenv").config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 // const { sendBufferToAffinda } = require("./resumeController");
@@ -1000,39 +1001,43 @@ const fetchAllJobs = async (filters) => {
     const logoService = new CompanyLogoService();
     const logoResults = await logoService.batchFetchLogos([...companyNames]);
 
-    const allJobs = validJobs.slice(0, 250).map(
-      ({
-        job,
-        companyName,
-        workplaceModelValue,
-        workTypeValue,
-        contractTypeValue,
-        experienceLevelValue,
-      }) => {
-        const logoData = logoResults.get(companyName.toLowerCase().trim()) || {
-          logoUrl: null,
-          companyUrl: null,
-        };
-        // console.log(job);
+    const allJobs = validJobs
+      .slice(0, 250)
+      .map(
+        ({
+          job,
+          companyName,
+          workplaceModelValue,
+          workTypeValue,
+          contractTypeValue,
+          experienceLevelValue,
+        }) => {
+          const logoData = logoResults.get(
+            companyName.toLowerCase().trim()
+          ) || {
+            logoUrl: null,
+            companyUrl: null,
+          };
+          // console.log(job);
 
-        return {
-          uniqueId: job.id,
-          title: job.title,
-          company: companyName,
-          location: job.location?.display_name || null,
-          url: job.redirect_url,
-          logoUrl: logoData.logoUrl,
-          companyUrl: logoData.companyUrl,
-          created: job.created,
-          category: job.category?.label || null,
-          description: job.description,
-          Workplace_Model: workplaceModelValue,
-          Work_Type: workTypeValue,
-          Contract_Type: contractTypeValue,
-          Experience_Level: experienceLevelValue,
-        };
-      }
-    );
+          return {
+            uniqueId: job.id,
+            title: job.title,
+            company: companyName,
+            location: job.location?.display_name || null,
+            url: job.redirect_url,
+            logoUrl: logoData.logoUrl,
+            companyUrl: logoData.companyUrl,
+            created: job.created,
+            category: job.category?.label || null,
+            description: job.description,
+            Workplace_Model: workplaceModelValue,
+            Work_Type: workTypeValue,
+            Contract_Type: contractTypeValue,
+            Experience_Level: experienceLevelValue,
+          };
+        }
+      );
 
     const endTime = Date.now();
     console.log(
@@ -1399,6 +1404,17 @@ const getMatchAnalyticsFromTemp = async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    const user = await userSchema.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.monthlyCount <= 0) {
+      return res
+        .status(400)
+        .json({ error: "User has reached resume upload limit" });
+    }
+
     // const resumeContent = await sendBufferToAffinda( resumeFile.buffer, resumeFile.originalname, resumeFile.mimetype);
     const resumeContent = await pdfParse(resumeFile.buffer);
 
@@ -1423,14 +1439,13 @@ const getMatchAnalyticsFromTemp = async (req, res) => {
     //   });
     // }
 
-    res.end(JSON.stringify(finalMatchResult));
+    await updateResumeCounter(userId);
+    res.status(200).send(finalMatchResult);
   } catch (error) {
     console.error("Error:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
-
 
 // Cache cleanup job
 cron.schedule("09 00 * * *", () => {
@@ -1442,5 +1457,5 @@ module.exports = {
   getFilteredJobs,
   getJobDetails,
   getMatchAnalyticsFromMain,
-  getMatchAnalyticsFromTemp
+  getMatchAnalyticsFromTemp,
 };

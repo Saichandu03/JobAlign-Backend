@@ -613,10 +613,10 @@ const getAllUsers = async (req, res) => {
   }
 };
 
-cron.schedule("0 0 * * *", async () => {
+cron.schedule("0 0 1 * *", async () => {
   try {
-    await user.updateMany({}, { $set: { dailyCounter: 3 } });
-    console.log("All dailyCounter fields reset to 3");
+    await user.updateMany({}, { $set: { monthlyCount: 10 } });
+    console.log("All Monthly Counter fields reset to 10");
   } catch (err) {
     console.error("Error resetting dailyCounter:", err);
   }

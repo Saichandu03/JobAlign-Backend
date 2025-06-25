@@ -650,7 +650,7 @@ const saveToDreamCollections = async (
   }
 };
 
-const saveDataToUser = async(userId,dreamRole, dreamCompany) =>{
+const saveDataToUser = async(userId, dreamCompany, dreamRole) =>{
   console.log(userId, dreamRole, dreamCompany);
   try{
     const updateFields = {};
