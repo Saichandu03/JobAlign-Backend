@@ -493,6 +493,54 @@ const generateMissingData = async (existingData, dreamCompany, dreamRole) => {
   };
 };
 
+// const saveNewDataToMasterCollections = async (
+//   newCompanyData,
+//   newRoleData,
+//   newRoadMapData,
+//   dreamCompany,
+//   dreamRole
+// ) => {
+//   const saveOperations = [];
+
+//   try {
+//     if (newCompanyData) {
+//       saveOperations.push(
+//         new companySchema({
+//           name: dreamCompany,
+//           data: JSON.stringify(newCompanyData),
+//         }).save()
+//       );
+//     }
+
+//     if (newRoleData) {
+//       saveOperations.push(
+//         new rolesSchema({
+//           name: dreamRole,
+//           data: JSON.stringify(newRoleData),
+//         }).save()
+//       );
+//     }
+//     if (newRoadMapData) {
+//       saveOperations.push(
+//         new roadMapSchema({
+//           name: dreamRole,
+//           data: JSON.stringify(newRoadMapData),
+//         }).save()
+//       );
+//     }
+
+//     if (saveOperations.length > 0) {
+//       await Promise.all(saveOperations);
+//       console.log("Successfully saved new data to master collections");
+//     }
+//   } catch (error) {
+//     console.error("Error saving new data to master collections:", error);
+//     throw new Error(
+//       `Master collections save operation failed: ${error.message}`
+//     );
+//   }
+// };
+
 const saveNewDataToMasterCollections = async (
   newCompanyData,
   newRoleData,
@@ -505,27 +553,31 @@ const saveNewDataToMasterCollections = async (
   try {
     if (newCompanyData) {
       saveOperations.push(
-        new companySchema({
-          name: dreamCompany,
-          data: JSON.stringify(newCompanyData),
-        }).save()
+        companySchema.findOneAndUpdate(
+          { name: dreamCompany },
+          { name: dreamCompany, data: JSON.stringify(newCompanyData) },
+          { upsert: true }
+        )
       );
     }
 
     if (newRoleData) {
       saveOperations.push(
-        new rolesSchema({
-          name: dreamRole,
-          data: JSON.stringify(newRoleData),
-        }).save()
+        rolesSchema.findOneAndUpdate(
+          { name: dreamRole },
+          { name: dreamRole, data: JSON.stringify(newRoleData) },
+          { upsert: true }
+        )
       );
     }
+
     if (newRoadMapData) {
       saveOperations.push(
-        new roadMapSchema({
-          name: dreamRole,
-          data: JSON.stringify(newRoadMapData),
-        }).save()
+        roadMapSchema.findOneAndUpdate(
+          { name: dreamRole },
+          { name: dreamRole, data: JSON.stringify(newRoadMapData) },
+          { upsert: true }
+        )
       );
     }
 
@@ -535,9 +587,7 @@ const saveNewDataToMasterCollections = async (
     }
   } catch (error) {
     console.error("Error saving new data to master collections:", error);
-    throw new Error(
-      `Master collections save operation failed: ${error.message}`
-    );
+    throw new Error(`Master collections save operation failed: ${error.message}`);
   }
 };
 
