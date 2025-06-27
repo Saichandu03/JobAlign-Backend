@@ -925,7 +925,7 @@ const checkTestAnswers = async (req, res) => {
     res.status(400).send("Missing required fields Road Map ID");
   }
 
-  const prompt = `You are an expert AI evaluator specialized in assessing technical explanations for complete beginners.
+    const prompt =  `You are an expert AI evaluator specialized in assessing technical explanations for complete beginners.
 
 Given the following JSON array containing beginner-level questions and their corresponding human-provided answers for a specific technical concept:
 ${JSON.stringify(answersObject)}
@@ -951,7 +951,7 @@ Evaluate each 'answer' based on how accurately and clearly it describes a **solu
 
 **Strict Handling for Minimal or Non-Descriptive Answers:**
 
-* If an 'answer' is a single letter (e.g., "A", "B"), a very short phrase (e.g., "Yes", "No", "It works", "Refer to documentation"), or completely lacks sufficient descriptive content to address the question and meet the above criteria, its **`match_score` MUST be 0-5%**. These answers inherently fail to provide any meaningful description of a solution or concept for a beginner. The comment should explicitly state this deficiency.
+* If an 'answer' is a single letter (e.g., "A", "B"), a very short phrase (e.g., "Yes", "No", "It works", "Refer to documentation"), or completely lacks sufficient descriptive content to address the question and meet the above criteria, its **match_score MUST be 0-5%**. These answers inherently fail to provide any meaningful description of a solution or concept for a beginner. The comment should explicitly state this deficiency.
 
 **Output Requirements:**
 
@@ -959,7 +959,7 @@ For each question-answer pair in the input array, you MUST generate and include 
 -   "match_score": A percentage (0-100%) calculated based on the weighted criteria above.
 -   "comment": A concise, professional comment (1-3 sentences, maximum 40 words) explaining the reasoning for the score. Focus specifically on what was good (e.g., clarity, accuracy), what was missing conceptually, or how clarity/completeness could be improved for a beginner.
 
-Finally, calculate an "overall_score" for all questions combined by **strictly averaging** their individual "match_score" percentages. This "overall_score" MUST be the precise mathematical average of all "match_score" values in the `response` array.
+Finally, calculate an "overall_score" for all questions combined by **strictly averaging** their individual "match_score" percentages. This "overall_score" MUST be the precise mathematical average of all "match_score" values in the response array.
 
 Return ONLY a valid JSON object in this exact format, with no additional text or formatting outside the JSON:
 
