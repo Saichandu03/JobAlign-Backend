@@ -925,50 +925,59 @@ const checkTestAnswers = async (req, res) => {
     res.status(400).send("Missing required fields Road Map ID");
   }
 
-    const prompt =  `You are an expert AI evaluator specialized in assessing technical explanations for complete beginners.
+    const prompt = `You are an expert AI evaluator specialized in assessing the quality of technical explanations.
 
-Given the following JSON array containing beginner-level questions and their corresponding human-provided answers for a specific technical concept:
+Given the following JSON array, which contains beginner-level technical questions and their corresponding human-provided answers for specific technical concepts:
 ${JSON.stringify(answersObject)}
 
-**Your Task:**
-Evaluate each 'answer' based on how accurately and clearly it describes a **solution** to its 'question' in a **real-world, mobile-centric scenario**, suitable for a **complete beginner with no prior coding experience**.
+**Your Core Task:**
+Evaluate each 'answer' based on how accurately and clearly it describes a **solution** to its 'question'. The explanation must be suitable for a **complete beginner with no prior coding experience**, specifically focusing on **real-world, mobile-centric scenarios**.
 
-**Detailed Evaluation Criteria & Scoring Rules for each 'match_score':**
+---
 
-1.  **Conceptual Accuracy & Relevance (Weighted 50%):**
-    * Does the answer correctly describe a relevant solution or concept using the stated technical topic?
+**Detailed Evaluation Criteria & Scoring Logic for each 'match_score':**
+
+For each answer, assign a percentage score (0-100%) based on the following weighted criteria:
+
+1.  **Conceptual Accuracy & Technical Relevance (50% of score):**
+    * Does the answer correctly describe a **relevant technical solution or concept** in the context of the question?
     * Is the core idea fundamentally sound, factual, and directly applicable to practical mobile use cases?
-    * **Strict Rule:** Answers that are factually incorrect, misleading, completely irrelevant to the question's technical intent, or fail to describe a solution will receive 0% for this criterion.
+    * **Strict Penalty:** If the answer is factually incorrect, misleading, irrelevant to the *technical* question's intent, or completely fails to describe *any* solution, this criterion scores 0%.
 
-2.  **Clarity & Simplicity for Beginners (Weighted 30%):**
-    * Is the explanation exceptionally easy for a complete beginner to understand, free of unexplained technical jargon?
+2.  **Clarity & Simplicity for Beginners (30% of score):**
+    * Is the explanation exceptionally easy to understand for a complete non-coder?
+    * Is it free of technical jargon, or is any essential jargon clearly and simply explained within the answer itself?
     * Does it effectively use analogies or real-world examples (where appropriate) to simplify complex ideas?
-    * Does it explain *how* a mobile user would encounter or practically interact with this concept/solution in a real-world context?
+    * Does it clearly explain *how a mobile user* would encounter or practically interact with this concept/solution?
 
-3.  **"Solutions, Not Code" Adherence & Focus (Weighted 20%):**
-    * Does the answer exclusively focus on *describing a conceptual solution or a technical concept* in simple terms?
-    * Does it avoid providing actual code snippets, pseudocode, or excessive technical implementation details that are not relevant to a beginner's conceptual understanding?
+3.  **"Solutions, Not Code" Adherence & Focus (20% of score):**
+    * Does the answer focus *exclusively* on describing a conceptual solution or a technical concept in simple terms?
+    * Does it strictly avoid providing actual code snippets, pseudocode, or excessive technical implementation details that are beyond a beginner's conceptual understanding?
+
+---
 
 **Strict Handling for Minimal or Non-Descriptive Answers:**
 
-* If an 'answer' is a single letter (e.g., "A", "B"), a very short phrase (e.g., "Yes", "No", "It works", "Refer to documentation"), or completely lacks sufficient descriptive content to address the question and meet the above criteria, its **match_score MUST be 0-5%**. These answers inherently fail to provide any meaningful description of a solution or concept for a beginner. The comment should explicitly state this deficiency.
+* If an 'answer' is a single letter (e.g., "A", "B"), a very short phrase without explanation (e.g., "Yes", "No", "It works", "Refer to documentation", "Just do X"), or entirely lacks sufficient descriptive content to meaningfully address the question and meet the above criteria, its **match_score MUST be 0-5%**. These answers inherently fail to provide any meaningful description of a solution or concept for a beginner. The corresponding comment should explicitly state this deficiency.
+
+---
 
 **Output Requirements:**
 
-For each question-answer pair in the input array, you MUST generate and include two new keys:
--   "match_score": A percentage (0-100%) calculated based on the weighted criteria above.
--   "comment": A concise, professional comment (1-3 sentences, maximum 40 words) explaining the reasoning for the score. Focus specifically on what was good (e.g., clarity, accuracy), what was missing conceptually, or how clarity/completeness could be improved for a beginner.
+For each question-answer pair in the input answersObject array, you MUST generate and include two new keys within the response array:
+-   "match_score": A percentage (0-100%) calculated as described above.
+-   "comment": A concise, professional comment (1-3 sentences, maximum 40 words) explaining the reasoning for the score. The comment should highlight strengths, conceptual gaps, or areas for clarity improvement for a beginner.
 
-Finally, calculate an "overall_score" for all questions combined by **strictly averaging** their individual "match_score" percentages. This "overall_score" MUST be the precise mathematical average of all "match_score" values in the response array.
+Finally, calculate the "overall_score" for all questions combined by **strictly averaging** all individual "match_score" percentages from the response array. This "overall_score" MUST be the precise mathematical average of those scores.
 
-Return ONLY a valid JSON object in this exact format, with no additional text or formatting outside the JSON:
+Return ONLY a valid JSON object in this exact format, with no additional text or formatting outside the JSON block:
 
 \`\`\`json
 {
   "overall_score": 1-100,
   "response": [
     {"question": "...", "answer": "...", "match_score": "...", "comment": "..."},
-    // ... more question-answer pairs (ensure keys like 'question-1', 'answer-1' are used if present in input)
+    // ... more question-answer pairs (ensure "question" and "answer" keys match your input, e.g., "question-1", "answer-1" if present)
   ]
 }
 \`\`\`
