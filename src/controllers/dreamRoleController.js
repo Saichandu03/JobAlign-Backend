@@ -12,9 +12,11 @@ const userSchema = require("../models/userSchema");
 const dreamComanySchema = require("../models/dreamComanySchema");
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
 const genAI2 = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY_2);
+const genAI3 = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY_3);
 
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 const model2 = genAI2.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model3 = genAI3.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const together = new Together({
   apiKey: process.env.TOGETHER_API_KEY,
@@ -951,7 +953,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
 `;
 
   try {
-    const result = await model2.generateContent(prompt);
+    const result = await model3.generateContent(prompt);
     const response = await result.response;
     const analysis = response.text();
 
