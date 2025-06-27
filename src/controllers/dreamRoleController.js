@@ -925,34 +925,54 @@ const checkTestAnswers = async (req, res) => {
     res.status(400).send("Missing required fields Road Map ID");
   }
 
-  const prompt = `Given the following JSON array containing beginner-level questions and their corresponding human-provided answers for a specific technical concept:
+  const prompt = `You are an expert AI evaluator specialized in assessing technical explanations for complete beginners.
+
+Given the following JSON array containing beginner-level questions and their corresponding human-provided answers for a specific technical concept:
 ${JSON.stringify(answersObject)}
 
-You are evaluating each 'answer' based on how accurately and clearly it describes a solution to its 'question' in a real-world, mobile-centric scenario, suitable for a complete beginner with no prior coding experience.
+**Your Task:**
+Evaluate each 'answer' based on how accurately and clearly it describes a **solution** to its 'question' in a **real-world, mobile-centric scenario**, suitable for a **complete beginner with no prior coding experience**.
 
-When evaluating each answer:
-- **Prioritize conceptual understanding:** Overlook minor typos, grammatical errors, or informal language. Focus on the core idea being conveyed.
-- **Assess accuracy and relevance:** Does the answer correctly describe a relevant solution using the stated concept? Is it applicable to a mobile context?
-- **Assess clarity and simplicity:** Is the explanation easy for a complete beginner to understand without jargon?
-- **Strictly adhere to the 'describe solutions, not write code' principle:** Answers should explain *what* a solution is or *how* it works conceptually, not provide actual code.
-- **Handle Minimal or Irrelevant Answers Strictly:** If an answer is a single letter, a very short phrase without explanation, or completely irrelevant to the question's intent (especially in a technical/solution context), it should receive a match_score of 0-10%. These answers fail to provide any meaningful description of a solution.
+**Detailed Evaluation Criteria & Scoring Rules for each 'match_score':**
 
-For each question-answer pair in the array, you MUST add two new keys:
-- "match_score": A percentage (0-100%) indicating how well the answer matches and addresses the question according to the above criteria.
-- "comment": A concise, professional comment (1-3 sentences) explaining the reasoning for the score. Highlight what was good, what was missing, or what could be improved in the answer's conceptual clarity for a beginner.
+1.  **Conceptual Accuracy & Relevance (Weighted 50%):**
+    * Does the answer correctly describe a relevant solution or concept using the stated technical topic?
+    * Is the core idea fundamentally sound, factual, and directly applicable to practical mobile use cases?
+    * **Strict Rule:** Answers that are factually incorrect, misleading, completely irrelevant to the question's technical intent, or fail to describe a solution will receive 0% for this criterion.
 
-Finally, calculate an "overall_score" for all questions combined by averaging their individual "match_score" percentages.
+2.  **Clarity & Simplicity for Beginners (Weighted 30%):**
+    * Is the explanation exceptionally easy for a complete beginner to understand, free of unexplained technical jargon?
+    * Does it effectively use analogies or real-world examples (where appropriate) to simplify complex ideas?
+    * Does it explain *how* a mobile user would encounter or practically interact with this concept/solution in a real-world context?
+
+3.  **"Solutions, Not Code" Adherence & Focus (Weighted 20%):**
+    * Does the answer exclusively focus on *describing a conceptual solution or a technical concept* in simple terms?
+    * Does it avoid providing actual code snippets, pseudocode, or excessive technical implementation details that are not relevant to a beginner's conceptual understanding?
+
+**Strict Handling for Minimal or Non-Descriptive Answers:**
+
+* If an 'answer' is a single letter (e.g., "A", "B"), a very short phrase (e.g., "Yes", "No", "It works", "Refer to documentation"), or completely lacks sufficient descriptive content to address the question and meet the above criteria, its **`match_score` MUST be 0-5%**. These answers inherently fail to provide any meaningful description of a solution or concept for a beginner. The comment should explicitly state this deficiency.
+
+**Output Requirements:**
+
+For each question-answer pair in the input array, you MUST generate and include two new keys:
+-   "match_score": A percentage (0-100%) calculated based on the weighted criteria above.
+-   "comment": A concise, professional comment (1-3 sentences, maximum 40 words) explaining the reasoning for the score. Focus specifically on what was good (e.g., clarity, accuracy), what was missing conceptually, or how clarity/completeness could be improved for a beginner.
+
+Finally, calculate an "overall_score" for all questions combined by **strictly averaging** their individual "match_score" percentages. This "overall_score" MUST be the precise mathematical average of all "match_score" values in the `response` array.
 
 Return ONLY a valid JSON object in this exact format, with no additional text or formatting outside the JSON:
+
+\`\`\`json
 {
   "overall_score": 1-100,
   "response": [
     {"question": "...", "answer": "...", "match_score": "...", "comment": "..."},
-    // ... more question-answer pairs
+    // ... more question-answer pairs (ensure keys like 'question-1', 'answer-1' are used if present in input)
   ]
 }
+\`\`\`
 `;
-
   try {
     const result = await model3.generateContent(prompt);
     const response = await result.response;
