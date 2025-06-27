@@ -11,7 +11,7 @@ const dreamRoleSchema = require("../models/dreamRoleSchema");
 const userSchema = require("../models/userSchema");
 const dreamComanySchema = require("../models/dreamComanySchema");
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
-const genAI2 = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY_2);
+const genAI2 = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY_4);
 const genAI3 = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY_3);
 
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
