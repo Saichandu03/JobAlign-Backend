@@ -925,29 +925,30 @@ const checkTestAnswers = async (req, res) => {
     res.status(400).send("Missing required fields Road Map ID");
   }
 
-  const prompt = `Given the following JSON array containing beginner-level questions and their corresponding human-provided answers for a specific technical concept:${JSON.stringify(
-    answersObject
-  )}
+  const prompt = `Given the following JSON array containing beginner-level questions and their corresponding human-provided answers for a specific technical concept:
+${JSON.stringify(answersObject)}
 
-Please evaluate each 'answer' based on how accurately and clearly it describes a solution to its 'question' in a real-world, mobile-centric scenario, suitable for a complete beginner with no coding experience.
+You are evaluating each 'answer' based on how accurately and clearly it describes a solution to its 'question' in a real-world, mobile-centric scenario, suitable for a complete beginner with no prior coding experience.
 
-When evaluating:
-- **Prioritize conceptual understanding:** Overlook minor typos, grammatical errors, or informal language. Focus on the core idea being conveyed by the human answer.
-- **Assess accuracy:** Does the answer correctly describe a relevant solution using the stated concept?
-- **Assess clarity and simplicity:** Is the explanation easy for a beginner to understand?
-- **Adhere to 'describe solutions, not write code' principle.**
+When evaluating each answer:
+- **Prioritize conceptual understanding:** Overlook minor typos, grammatical errors, or informal language. Focus on the core idea being conveyed.
+- **Assess accuracy and relevance:** Does the answer correctly describe a relevant solution using the stated concept? Is it applicable to a mobile context?
+- **Assess clarity and simplicity:** Is the explanation easy for a complete beginner to understand without jargon?
+- **Strictly adhere to the 'describe solutions, not write code' principle:** Answers should explain *what* a solution is or *how* it works conceptually, not provide actual code.
+- **Handle Minimal or Irrelevant Answers Strictly:** If an answer is a single letter, a very short phrase without explanation, or completely irrelevant to the question's intent (especially in a technical/solution context), it should receive a match_score of 0-10%. These answers fail to provide any meaningful description of a solution.
 
-For each question-answer pair in the array, add two new keys:
-- "match_score": A percentage (0-100%) indicating how well the answer matches and addresses the question according to the criteria.
-- "comment": A brief, professional comment explaining the reasoning for the score and highlighting what was good or what could be improved in the answer's conceptual clarity.
+For each question-answer pair in the array, you MUST add two new keys:
+- "match_score": A percentage (0-100%) indicating how well the answer matches and addresses the question according to the above criteria.
+- "comment": A concise, professional comment (1-3 sentences) explaining the reasoning for the score. Highlight what was good, what was missing, or what could be improved in the answer's conceptual clarity for a beginner.
 
 Finally, calculate an "overall_score" for all questions combined by averaging their individual "match_score" percentages.
 
-Return ONLY a valid JSON object in this exact format, with no additional text or formatting:
+Return ONLY a valid JSON object in this exact format, with no additional text or formatting outside the JSON:
 {
-  "score": 1-100,
+  "overall_score": 1-100,
   "response": [
-    {"question-1": "...", "answer-1": "...", "match_score": "...", "comment": "..."}, ....
+    {"question": "...", "answer": "...", "match_score": "...", "comment": "..."},
+    // ... more question-answer pairs
   ]
 }
 `;
