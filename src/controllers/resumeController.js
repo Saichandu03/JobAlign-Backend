@@ -8,6 +8,7 @@ require("dotenv").config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const userSchema = require("../models/userSchema");
 const atsSchema = require("../models/ATSSchema");
+const analyticResultsSchema = require('../models/analyticsResultsSchema')
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENAI_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -412,6 +413,7 @@ const extractAndParseJson = (responseString) => {
 const getAtsAnalysis = async (req, res) => {
   const file = req.file;
   const userId = req.body.userId;
+  const jobId = req.body.jobId;
 
   if (!file) {
     return res.status(400).json({ error: "No file uploaded" });
@@ -419,7 +421,9 @@ const getAtsAnalysis = async (req, res) => {
   if (!userId) {
     return res.status(400).json({ error: "User Id is required" });
   }
+  
   const user = await userSchema.findById(userId);
+
   if (!user) {
     return res.status(404).json({ error: "User not found" });
   }
@@ -431,6 +435,7 @@ const getAtsAnalysis = async (req, res) => {
   try {
     const resumeText = await pdfParse(file.buffer);
     console.log(resumeText);
+
     const analysisResult = await analyzeResumeWithATS(resumeText);
     if (analysisResult === null) {
       return res.status(400).json({ error: "Please provide a valid resume" });

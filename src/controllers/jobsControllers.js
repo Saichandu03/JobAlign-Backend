@@ -4,6 +4,7 @@ const { LRUCache } = require("lru-cache");
 const pdfParse = require("pdf-parse");
 const userSchema = require("../models/userSchema");
 const resumeSchema = require("../models/resumeSchema");
+const analyticResultsSchema = require('../models/analyticsResultsSchema')
 const {updateResumeCounter} = require('./resumeController')
 require("dotenv").config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
@@ -1358,6 +1359,7 @@ const matchResume = async (jobObject, resumeContent) => {
 
 const getMatchAnalyticsFromMain = async (req, res) => {
   try {
+    console.log(req.body);
     if (!req.body.userId || !req.body.jobObject) {
       return res.status(400).json({
         message: "Missing required fields: userId and jobObject",
@@ -1365,6 +1367,18 @@ const getMatchAnalyticsFromMain = async (req, res) => {
     }
 
     const { userId, jobObject } = req.body;
+
+    const jobAnalytics = await analyticResultsSchema.find({
+      userId : userId ,
+      jobId : jobObject.uniqueId,
+    })
+
+    console.log(jobAnalytics);
+
+    if(jobAnalytics.length > 0){
+      return res.status(200).json(JSON.parse(jobAnalytics[0].result))
+    }
+
 
     const resumeData = await resumeSchema.find({ userId: userId });
 
@@ -1384,6 +1398,11 @@ const getMatchAnalyticsFromMain = async (req, res) => {
       });
     }
 
+    await analyticResultsSchema.insertOne({
+      userId: userId ,
+      jobId: jobObject.uniqueId ,
+      result: JSON.stringify(matchResult),
+      });
     res.status(200).json(matchResult);
   } catch (error) {
     console.error("Error in getMatchAnalytics function:", error);
