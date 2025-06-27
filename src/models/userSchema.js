@@ -41,11 +41,11 @@ const userSchema = new mongoose.Schema(
     },
     preferedRoles: {
       type: Array,
-      default: ["Full Stack Developer","Software Engineer "],
+      default: [],
     },
     preferedLocations: {
       type: Array,
-      default: ["Bangalore","Chennai"],
+      default: [],
     },
     dreamCompany :{
       type: String,
