@@ -1359,7 +1359,7 @@ const matchResume = async (jobObject, resumeContent) => {
 
 const getMatchAnalyticsFromMain = async (req, res) => {
   try {
-    console.log(req.body);
+    // console.log(req.body);
     if (!req.body.userId || !req.body.jobObject) {
       return res.status(400).json({
         message: "Missing required fields: userId and jobObject",
@@ -1368,16 +1368,16 @@ const getMatchAnalyticsFromMain = async (req, res) => {
 
     const { userId, jobObject } = req.body;
 
-    const jobAnalytics = await analyticResultsSchema.find({
-      userId : userId ,
-      jobId : jobObject.uniqueId,
-    })
+    // const jobAnalytics = await analyticResultsSchema.find({
+    //   userId : userId ,
+    //   jobId : jobObject.uniqueId,
+    // })
 
-    console.log(jobAnalytics);
+    // console.log(jobAnalytics);
 
-    if(jobAnalytics.length > 0){
-      return res.status(200).json(JSON.parse(jobAnalytics[0].result))
-    }
+    // if(jobAnalytics.length > 0){
+    //   return res.status(200).json(JSON.parse(jobAnalytics[0].result))
+    // }
 
 
     const resumeData = await resumeSchema.find({ userId: userId });
@@ -1398,11 +1398,11 @@ const getMatchAnalyticsFromMain = async (req, res) => {
       });
     }
 
-    await analyticResultsSchema.insertOne({
-      userId: userId ,
-      jobId: jobObject.uniqueId ,
-      result: JSON.stringify(matchResult),
-      });
+    // await analyticResultsSchema.insertOne({
+    //   userId: userId ,
+    //   jobId: jobObject.uniqueId ,
+    //   result: JSON.stringify(matchResult),
+    //   });
     res.status(200).json(matchResult);
   } catch (error) {
     console.error("Error in getMatchAnalytics function:", error);
